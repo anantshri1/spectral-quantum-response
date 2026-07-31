@@ -159,6 +159,9 @@ class FNO(eqx.Module):
         x = jax.vmap(self.proj2)(x)        # (nx, 2)
         return x                           # (nx, 2) = [Re ψ_T, Im ψ_T]
 
+"""
+Diagnostics
+```
 import jax, jax.numpy as jnp, equinox as eqx
 from src.fno import FNO
 
@@ -173,16 +176,16 @@ print("output shape :", out.shape)                       # (128, 2)
 print("output finite:", jnp.all(jnp.isfinite(out)).item())
 n = sum(x.size for x in jax.tree_util.tree_leaves(eqx.filter(model, eqx.is_array)))
 print(f"params: {n:,}")   # ~139,938 — a hair above Burgers' 139,745
-
-"""
 ```
-Lifting:          2×32 + 32  =      96
+
+```
+Lifting:          4×32 + 32         =      160
 SpectralConv ×4:   4 × 2×(16×32×32) = 131,072   ← w_real + w_imag, both float32
 Linear ×4:         4 × (32×32+32)   =   4,224
 proj1:             32×128+128       =   4,224
-proj2:             128×1+1          =     129
+proj2:             128×2+1          =     258
 ─────────────────────────────────────────────
-Total:                               ~139,745
+Total:                               ~139,938
 ```
 
 """

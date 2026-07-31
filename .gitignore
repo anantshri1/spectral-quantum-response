@@ -1,0 +1,25 @@
+# Generated data and experiment tracking
+data/
+experiments/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+dist/
+build/
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+*.ipynb
+
+# Env
+.env
+.venv/
+venv/
+
+# OS
+.DS_Store
+EOF
