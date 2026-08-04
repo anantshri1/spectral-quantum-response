@@ -1,0 +1,6 @@
+jax[cpu]
+equinox
+optax
+mlflow
+matplotlib
+numpy
