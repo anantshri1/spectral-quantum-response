@@ -173,3 +173,15 @@ divergence diagnostics mid-integration to actually test.
 ### Artifacts
 - results/seed_robustness_sweep.csv
 - checkpoints/fno_N2000_seed{1,2,3}_M{12,16}_final.eqx
+
+### Correction to headline framing
+NOT "fewer modes = better response" (M=2,4 are worse on BOTH axes -- undertrained,
+not response-optimal). Response error is NON-MONOTONIC / peaked in M: worst at the
+extremes (2: forward-starved; presumably 16+ eventually: capacity-slack), best at
+an INTERIOR sweet spot (~8-12) where forward capacity is sufficient without being
+excessive. This sweet spot does NOT coincide with the n_modes that's optimal for
+forward accuracy alone (forward keeps improving all the way to 16 and beyond).
+Practical implication: n_modes tuned for forward performance (as Phase 3 did,
+correctly, given only forward was measured) is not the same n_modes that's
+best for response fidelity -- selecting architecture hyperparameters against a
+single metric silently mis-tunes a different one you weren't measuring.
