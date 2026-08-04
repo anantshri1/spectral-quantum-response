@@ -81,3 +81,60 @@ it's more than suggestive. Deferred.
 ### Artifacts
 - results/truncate_sweep.csv  (idx, k0, M, response_err)
 - results/response_vs_modes_truncate.png
+
+## Block 5 — retrain arm + the founding question
+
+### Setup
+4 fresh FNOs trained from scratch, n_modes in {2,4,8,12}, all else identical
+to Phase-3 (seed=0, n_train=2000, n_epochs=500, same lr schedule). M=16 point
+reuses the canonical Phase-3/4 checkpoint (fno_N2000_seed0_final.eqx) rather
+than retraining, by construction — verified gap(M=16)=0.0000 between the
+truncate and retrain sweeps (same model, same numbers).
+
+Response floor baseline: untrained FNO, same architecture (n_modes=16),
+random init, never trained. response_err = 1.0000 +/- 0.0004, FLAT across
+all |k0| bins (no k0-dependence in the floor itself). This is the "predicts
+nothing correlated with J_true" zero-information anchor.
+
+### Forward + response vs M (retrain arm, seed 0)
+| M  | fwd rel-L2 | response err | recovered (1 - err/1.0) |
+|----|-----------|--------------|--------------------------|
+|  2 |   0.2269  |    0.9873    |   1.3%                   |
+|  4 |   0.1018  |    0.5573    |   44.3%                  |
+|  8 |   0.0319  |    0.2442    |   75.6%                  |
+| 12 |   0.0191  |    0.2252    |   77.5%                  |
+| 16 |   0.0170  |    0.5113    |   48.9%                  |
+
+## ANSWER TO THE FOUNDING QUESTION
+Does forward-only training recover the correct response as a byproduct?
+PARTIALLY. The canonical (M=16) forward-only-trained FNO has response error
+0.5113 against a 1.0000 zero-information floor -> recovers ~49% of the true
+response operator's structure, unsupervised, purely as a byproduct of
+learning ψ0,V -> ψ_T. Forward is near-perfect (rel-L2 0.017); response is
+roughly half-right. This is the ~30x forward-vs-response gap in absolute
+terms (0.017 vs 0.511), now anchored against a real floor rather than a bare
+number.
+
+## Clip vs retrain (Block 4 vs Block 5) — the adaptation finding
+Retrained models substantially OUTPERFORM clipped models at matched M for
+M in {4,8,12} (e.g. M=12: retrain 0.225 vs truncate 0.556 -- 78% vs 44%
+recovered). At M=2 both collapse to the floor (forward itself fails,
+rel-L2=0.227) -- not enough spectral bandwidth for ANY strategy.
+=> Response information is NOT rigidly tied to specific modes; a model
+   allowed to train within a smaller budget re-routes/re-learns most of it.
+   Truncate-at-inference OVERSTATES how damaging truncation is architecturally.
+
+## SURPRISE, UNCONFIRMED (single seed) — non-monotonicity in the retrain curve
+Retrain response error is NOT monotonic in M: 0.99 -> 0.56 -> 0.24 -> 0.23 ->
+0.51 (M=2,4,8,12,16). M=12 (77.5% recovered) beats M=16 (48.9% recovered) at
+nearly IDENTICAL forward accuracy (0.019 vs 0.017). If real: more modes gave
+the 16-model forward headroom but WORSE response -- the extra modes 12-15
+may be used in a way that corrupts response fidelity rather than helping it.
+This is the sharpest possible form of the project's thesis, but it rests on
+ONE seed per M. NEEDS 2-3 seeds per M before claiming the inversion is real
+and not training-noise. Flagged, not claimed.
+
+### Artifacts
+- results/retrain_sweep.csv, results/untrained_sweep.csv
+- results/response_clip_vs_retrain.png
+- checkpoints/fno_N2000_seed0_M{2,4,8,12}_final.eqx

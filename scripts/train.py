@@ -75,9 +75,11 @@ def get_git_commit():
     except Exception:
         return "unknown"
 
-def train(cfg, n_train=None, seed=None):
+def train(cfg, n_train=None, seed=None, n_modes = None):
     if seed is not None:
         cfg.seed = seed
+    if n_modes is not None:
+        cfg.n_modes = n_modes
 
     psi0_tr, V_tr, uT_tr = load_split("data/train.npz", cfg.nx)
     psi0_te, V_te, uT_te = load_split("data/test.npz",  cfg.nx)
@@ -107,7 +109,7 @@ def train(cfg, n_train=None, seed=None):
     os.makedirs("checkpoints", exist_ok=True)
 
     mlflow.set_experiment(cfg.experiment_name)
-    with mlflow.start_run(run_name=f"fno_N{n_actual}_seed{cfg.seed}"):
+    with mlflow.start_run(run_name=f"fno_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}"):
         mlflow.log_params({
             "model_type":     "fno",
             "n_train":        n_actual,
@@ -151,10 +153,10 @@ def train(cfg, n_train=None, seed=None):
             # costs 30 epochs, not the whole run.
             if epoch % 50 == 0:
                 eqx.tree_serialise_leaves(
-                    f"checkpoints/fno_N{n_actual}_seed{cfg.seed}_epoch{epoch:04d}.eqx", model)
+                    f"checkpoints/fno_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}_epoch{epoch:04d}.eqx", model)
 
         eqx.tree_serialise_leaves(
-            f"checkpoints/fno_N{n_actual}_seed{cfg.seed}_final.eqx", model)
+            f"checkpoints/fno_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}_final.eqx", model)
         print(f"  done. final test rel-L2: {float(rel):.4f} | norm-viol: {float(nv):.4f}")
 
     return model
@@ -165,9 +167,9 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--n_train", type=int, default=None, help="Training set size. Default: all 2000.")
     p.add_argument("--seed",    type=int, default=None, help="Overrides cfg.seed if given.")
+    p.add_argument("--n_modes", type=int, default=None, help="Overrides cfg.n_modes if given.")
     args = p.parse_args()
-    train(Config(), n_train=args.n_train, seed=args.seed)
-
+    train(Config(), n_train=args.n_train, seed=args.seed, n_modes=args.n_modes)
 """
 # Diagnostic runs
 
