@@ -73,7 +73,7 @@ class SpectralConv1d(eqx.Module):
         # high-freq bins with zero are filled (the network learns which low modes matter)
 
         n_ft = nx // 2 + 1
-        out_ft_full = jnp.zeros((n_ft, out_ft.shape[-1]), dtype=jnp.complex64)
+        out_ft_full = jnp.zeros((n_ft, out_ft.shape[-1]), out_ft.dtype)
         out_ft_full = out_ft_full.at[:self.n_modes, :].set(out_ft)
 
         # ---- Step 5: Inverse FFT -----------------------
