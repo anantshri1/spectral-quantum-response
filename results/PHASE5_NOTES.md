@@ -138,3 +138,38 @@ and not training-noise. Flagged, not claimed.
 - results/retrain_sweep.csv, results/untrained_sweep.csv
 - results/response_clip_vs_retrain.png
 - checkpoints/fno_N2000_seed0_M{2,4,8,12}_final.eqx
+
+## CONFIRMED — M=12 beats M=16 on response, across 4 seeds each
+Seed-robustness check: response error, seed in {0,1,2,3}, forward accuracy
+matched across seeds (M=12: 0.0191-0.0213; M=16: 0.0170-0.0190).
+
+| seed | M=12 response | M=16 response |
+|------|---------------|---------------|
+|  0   |    0.2252     |    0.5113     |
+|  1   |    0.2101     |    0.5257     |
+|  2   |    0.2308     |    0.5339     |
+|  3   |    0.2024     |    0.4636     |
+| mean |    0.2171     |    0.5086     |
+
+NO OVERLAP across 4 seeds each: worst M=12 (0.231) still beats best M=16
+(0.464) by a wide margin. This is not seed noise -- robust, decisive effect.
+
+At near-identical forward accuracy, M=12 recovers ~2x the response structure
+of M=16 (78% vs 49% recovered, floor=1.0). More spectral capacity bought
+forward headroom the task didn't need, at direct cost to response fidelity.
+
+### Candidate mechanism (UNTESTED, do not overclaim)
+Forward-only training constrains only psi_T (the endpoint), not the path.
+More modes = more forward-equivalent internal solutions = more ways to hit
+psi_T without tracing the correct propagator-sandwich dynamics that the
+response derivative is sensitive to. Fewer modes = tighter constraint = fewer
+escape routes = training more often lands on solutions whose linearization
+happens to be closer to correct. Consistent with roadmap's own framing
+("two Hamiltonians can give near-identical psi(T) and different response...
+the derivative sees the path; the state doesn't") applied to MODEL CAPACITY
+rather than physical systems. Plausible, NOT tested. Would need e.g. path-
+divergence diagnostics mid-integration to actually test.
+
+### Artifacts
+- results/seed_robustness_sweep.csv
+- checkpoints/fno_N2000_seed{1,2,3}_M{12,16}_final.eqx
