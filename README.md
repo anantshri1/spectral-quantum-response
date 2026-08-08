@@ -249,6 +249,66 @@ These are graphed below:
 
 <img width="720" height="494" alt="image" src="https://github.com/user-attachments/assets/bcd86dd6-ed53-44e7-804e-b4e2f1d53a0f" />
 
+### Retrain arm, and the response floor
+* **The missing floor baseline**: Before this block, "`response error = 0.511`" had no interpretable anchor — was that mostly-right or mostly-wrong? Floor baseline: an FNO with the exact training architecture (`M=16`, same channel width, same block count) but never trained — random initialization only, run through the identical response machinery.
+ Result: `response error = 1.0000 ± 0.0004`, flat to four decimal places across every |k₀| bin. This is the clean "predicts nothing correlated with the true response" zero-information floor. Its flatness across |k₀| is itself a useful check: it confirms the variation seen in the k₀ sweep is a property of trained models, not an artifact of how the error metric scales with k₀.
+
+* **The founding question**: With the floor established, the canonical M=16 model's response error of 0.511 becomes interpretable: it sits almost exactly halfway between "knows nothing" (1.0) and "matches exactly" (0.0). Forward-only training recovers roughly 49% of the true response operator's structure, unsupervised, as a byproduct of learning `ψ₀,V → ψ_T` alone. Forward accuracy is near-perfect (rel-L2 = 0.017) while response is roughly half-right — a ~30× gap between the two error scales on the identical model. This is genuine, substantial partial emergence, not full emergence and not absence.
+
+* **Retrain arm**: does the model adapt to smaller mode budgets? Four fresh FNOs were trained from scratch at `M ∈ {2,4,8,12}` (seed 0, otherwise identical: same `n_train, epochs`, LR schedule) — the only controlled variable is `n_modes`, so any response difference at matched M is attributable to training with vs clipping to that budget. `M=16` reuses the canonical checkpoint (verified: gap between truncate-arm and retrain-arm at M=16 is exactly 0.0000, since it's the same model). The results of the training are shown below:
+
+| M  | fwd rel-L2 | response err | recovered (1 - err/1.0) |
+|----|-----------|--------------|--------------------------|
+|  2 |   0.2269  |    0.9873    |   1.3%                   |
+|  4 |   0.1018  |    0.5573    |   44.3%                  |
+|  8 |   0.0319  |    0.2442    |   75.6%                  |
+| 12 |   0.0191  |    0.2252    |   77.5%                  |
+| 16 |   0.0170  |    0.5113    |   48.9%                  |
+
+ Forward accuracy improves monotonically with M — expected, more capacity strictly helps the forward task. Response accuracy is non-monotonic, peaking in the interior (`M~8–12`) rather than at the forward-optimal `M=16`. `M=2` and `M=4` are bad on both axes (forward-starved — there isn't yet enough spectral bandwidth to learn the map at all, so response has nothing to build on); from `M=12 to M=16`, forward barely moves (`0.019→0.017`) while response gets substantially worse (`0.225→0.511`).
+
+ Interpretation: `n_modes` tuned purely for forward performance is not the same `n_modes` that's optimal for response fidelity, and this is invisible unless you measure response directly.
+
+<img width="750" height="500" alt="image" src="https://github.com/user-attachments/assets/ddd8641a-b639-40c5-8df1-eab7098c7753" />
+
+
+### Clip vs Retrain
+
+|M|	truncate (clipped)	|retrain (trained fresh)|	gap|
+|-|-|-|-|
+|2|	1.037|	0.987|	0.050|
+|4	|0.924|	0.557|	0.367|
+|8|	0.643|	0.244|	0.399|
+|12|	0.556|	0.225|	0.331|
+|16|	0.511|	0.511|	0.000|
+
+At M=8 and M=12, retrained models recover roughly 75–78% of the response versus only ~44–51% for the corresponding clipped model — training within a smaller budget lets the network re-route response-relevant structure into the modes and pointwise branch it actually has, something clipping (which removes weights the model already committed to) cannot do. At M=2 the gap nearly vanishes — both strategies collapse to the floor, consistent with a genuine information-theoretic wall rather than an optimization failure (confirmed independently: forward rel-L2 itself is 0.227 at M=2, so the forward task is starved too, not just the response).
+
+Conclusion: truncate-at-inference substantially overstates how architecturally damaging truncation is. Response information is not rigidly bound to specific modes; a model given the chance to train within a smaller budget recovers most of it.
+
+### Confirming the `M=12` vs `M=16` inversion across seeds
+The single most striking number here: `M=12` has better response fidelity than `M=16` at matched forward accuracy, in the single-seed data. This was tested with 3 additional seeds (1,2,3) at both `M=12` and `M=16` (6 more training runs total):
+
+| seed | M=12 response | M=16 response |
+|------|---------------|---------------|
+|  0   |    0.2252     |    0.5113     |
+|  1   |    0.2101     |    0.5257     |
+|  2   |    0.2308     |    0.5339     |
+|  3   |    0.2024     |    0.4636     |
+| mean |    0.2171     |    0.5086     |
+
+ No overlap across 4 seeds each — the worst `M=12` run (`0.231`) still beats the best `M=16` run (`0.464`) by a wide margin, and forward accuracy stays tightly matched across all 8 runs (`M=12: 0.019–0.021; M=16: 0.017–0.019`). This is a robust, decisive effect: **more spectral capacity bought forward headroom the task didn't need, at direct, measurable cost to response fidelity**. This is not *"fewer modes is always better"* — `M=2` and `M=4` are worse on both axes simultaneously (undertrained, not response-optimal). The real, precise claim is that response fidelity is peaked in `n_modes`, worst at both extremes, best at an interior sweet spot (~8–12), and that sweet spot does not coincide with the `n_modes` that's optimal for forward accuracy alone.
+
+> Candidate mechanism: forward-only training constrains only the endpoint `ψ_T`, not the trajectory that reaches it. More spectral modes give the optimizer more ways to hit `ψ_T` accurately without tracing the physically correct propagator-sandwich dynamics that the response derivative (which integrates over the whole path) is sensitive to. Fewer modes tighten that constraint, so training is more often forced onto solutions whose linearization happens to be closer to correct. Untested; would need something like mid-integration trajectory-divergence diagnostics to actually confirm.
+
+### Error Map Localization
+An attempt was made to test the project's namesake spatial claim directly — does response error concentrate specifically near the mode cutoff in `(k,q)` space? `J_true`, `J_FNO(M=12)`, and `J_FNO(M=16)` were computed and rotated into mode-coupling space for several samples spanning different k₀, and error maps `|J_FNO − J_true|` were plotted with a candidate reference line at `k−q=±M`.
+
+<img width="903" height="1000" alt="image" src="https://github.com/user-attachments/assets/58374637-331a-43b6-a197-9360d0950af1" />
+
+
+This was explicitly flagged as inconclusive rather than banked as a result. The reference line's geometry is unresolved: the FNO's internal truncation acts on Fourier mode indices inside the spectral-conv layers, which is not obviously the same axis as k−q in the end-to-end input-output Jacobian's mode-coupling basis — so a diagonal line at k−q=M may simply be testing the wrong thing. What the plot does show unambiguously, without relying on the reference line at all: the M=16 error band is visibly brighter and sharper than the M=12 error band at the same locations, which is a spatial re-confirmation of the aggregate finding but not new information, and not a localization claim. 
+
 ---
 ## References
 * **Derivative-informed neural operator acceleration of geometric MCMC for infinite-dimensional Bayesian inverse problems**, Lianghao Cao, Thomas O'Leary-Roseberry, Omar Ghattas. (2024). [arXiv: 2403.08220](https://arxiv.org/abs/2403.08220).
