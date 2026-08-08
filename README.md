@@ -309,6 +309,12 @@ An attempt was made to test the project's namesake spatial claim directly — do
 
 This was explicitly flagged as inconclusive rather than banked as a result. The reference line's geometry is unresolved: the FNO's internal truncation acts on Fourier mode indices inside the spectral-conv layers, which is not obviously the same axis as k−q in the end-to-end input-output Jacobian's mode-coupling basis — so a diagonal line at k−q=M may simply be testing the wrong thing. What the plot does show unambiguously, without relying on the reference line at all: the M=16 error band is visibly brighter and sharper than the M=12 error band at the same locations, which is a spatial re-confirmation of the aggregate finding but not new information, and not a localization claim. 
 
+### Key methodological learnings
+* A proxy axis (k₀) can be a poor test of a mechanism (truncation) even when both are physically related — the coupling band's position depends on k₀, but if the band never reaches the cutoff across the tested range, sliding it tells you little about what happens when it does. The fix was to manipulate the cutoff directly rather than trying to reach it indirectly.
+* Ablations need a floor, not just relative comparisons. "0.511" was uninterpretable until measured against a random-init zero-information baseline.
+* Clipping a trained model and training a smaller model from scratch are different experiments that must not be conflated — they can and did give substantially different answers (clip overstates damage relative to retrain), and the gap between them was itself the more informative result.
+* Optimizing one metric can silently mis-tune another you aren't measuring — `n_modes` chosen correctly for forward accuracy turned out to be well past the response-fidelity optimum, and this was invisible without deliberately measuring response as its own axis.
+
 ---
 ## References
 * **Derivative-informed neural operator acceleration of geometric MCMC for infinite-dimensional Bayesian inverse problems**, Lianghao Cao, Thomas O'Leary-Roseberry, Omar Ghattas. (2024). [arXiv: 2403.08220](https://arxiv.org/abs/2403.08220).
