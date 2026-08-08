@@ -192,6 +192,62 @@ Two more numbers from this matrix, both later comparison baselines: `mass within
 * The `k−q` resolved error map: Binning `|J_FNO − J_true|` by offset `d=k−q` shows where the error concentrates: peaks at `k−q = 2`, and the error mass above the band center (k₀=4) vs below has ratio 0.42 — i.e. the error is more than twice as concentrated on the low-k side of the band, not the high-k edge.
 
 ---
+## Response Fidelity vs. Spectral Truncation
+
+We previously established the machinery to compute an FNO's learned response Jacobian `J_FNO = ∂ψ_T/∂V` and compare it against the true response `J_true` (obtained by autodiff through the split-step solver). On a single sample, the canonical M=16 model showed a large gap: `forward relative-L2 error of 0.017` but `response relative-Frobenius error of 0.386`. We now aim to turn that one-sample observation into a properly measured, causally-grounded result — and ultimately to answer the project's founding question: *does an FNO trained only on forward evolution (ψ₀, V) → ψ_T recover the correct response operator as an unsupervised byproduct?*
+
+### The $k_0$ sweep
+
+**Setup**: Response error was computed for all 200 test samples using the canonical checkpoint (`fno_N2000_seed0_final.eqx`, `M=16`), and binned against the wavepacket's carrier momentum `k₀`. The physical logic: we previously showed the true response's mode-coupling band `J(k,q)` is centered on `k−q=k₀`, not `k−q=0` (a real physics finding — the propagator sandwiches the perturbation between two copies of time evolution, and the state arriving at the perturbation carries momentum k₀, so the response inherits that offset). The hypothesis was that larger |k₀| slides this band toward the FNO's fixed |k|≤16 mode cutoff, degrading response fidelity as |k₀| grows.
+
+**Result**: Response error was non-monotonic in `|k₀|` — a symmetric "M" shape, dipping at k₀=0 (0.489), peaking at |k₀|=1 (0.592), then declining monotonically to a minimum at |k₀|=4 (0.428). This falsified both pre-registered hypotheses: not the predicted monotonic rise, and not flat (which would have indicated generic underfitting rather than a truncation effect).
+
+| Abs(k0) |  n |  num   |  den   | rel-err |
+|------|----|--------|--------|---------|
+|  0   | 25 | 0.2608 | 0.5337 | 0.4887  |
+|  1   | 46 | 0.3159 | 0.5336 | 0.5918  |  
+|  2   | 33 | 0.2874 | 0.5320 | 0.5402  |
+|  3   | 51 | 0.2634 | 0.5218 | 0.5047  |
+|  4   | 45 | 0.2131 | 0.4979 | 0.4280  | 
+
+The corresponding graphs are shown below:
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/40633995-4a4a-470d-8675-37dd3947990f" width="450">
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/f8c52263-c370-451b-b0b5-14377a8d4990" width="450">
+    </td>
+  </tr>
+</table>
+
+
+**Confounds ruled out, so the shape is trusted**:
+ - Denominator artifact: response error is a ratio (`‖J_FNO−J_true‖/‖J_true‖`); if `‖J_true‖` grew with `|k₀|` the ratio could fall for reasons unrelated to FNO fidelity. Checked directly: the denominator is flat (`0.534→0.498`, ~7% drift) while the numerator (absolute error) traces the same M-shape. The signal is real, not a normalization artifact.
+ - σ (packet width) leakage: wavepacket σ and k₀ are drawn independently but could accidentally correlate in a finite sample. Checked: `corr(|k₀|, σ) = 0.018` — negligible.
+
+> **Why we stopped chasing k₀ mechanistically**: Even at the largest tested |k₀|=4, the true coupling band still keeps 95% of its mass inside the |k|≤16 mode budget. The band never actually reaches the cutoff across the tested range, so k₀ was always a weak proxy for truncation stress — sliding a band that never reaches the wall can't cleanly test what happens when the wall is hit. The M-shape is a real, banked finding, but its mechanism is unexplained and was deliberately not investigated further, in favor of a more direct causal test.
+
+### Truncate-at-inference — the direct causal test
+
+Rather than proxy truncation through k₀, this block manipulates the mode cutoff directly. Method: take the trained M=16 model and zero the spectral weights (`w_real, w_imag`) for modes `M..15` in every FNO block, for `M ∈ {2,4,8,12,16}`, leaving the pointwise-linear branch of each block untouched (architecturally correct — that branch doesn't depend on `n_modes`). This is implemented via `eqx.tree_at` selecting leaves by attribute path (not by value).
+
+Gate before trusting the sweep: `M=16` truncation must be the identity (empty slice, no-op) and exactly reproduce `0.3862` on sample 0. It did, bit-exact. `M=4` moved the same sample to 1.02 — confirming the transform actually bites.
+
+**Result**: response collapses monotonically as modes removed (200 samples)
+| M  |  mean  |  sem   |
+|----|--------|--------|
+|  2 | 1.0373 | 0.0044 |  <- worse than zero-prediction (>1.0)
+|  4 | 0.9240 | 0.0071 |
+|  8 | 0.6433 | 0.0043 |
+| 12 | 0.5562 | 0.0052 |
+| 16 | 0.5113 | 0.0056 |  <- == full model; matches k0-sweep grand mean (consistency gate)
+
+These are graphed below:
+
+<img width="720" height="494" alt="image" src="https://github.com/user-attachments/assets/bcd86dd6-ed53-44e7-804e-b4e2f1d53a0f" />
 
 ---
 ## References
