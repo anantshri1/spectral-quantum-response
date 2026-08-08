@@ -1,6 +1,5 @@
 # Derivative-Informed Operator Learning for Quantum Response Functions
-
-
+A systematic study to test whether a Fourier Neural Operator (FNO) trained only on forward evolution `(ψ₀, V) → ψ_T` learns the correct response `∂ψ_T/∂V `as a byproduct.
 
 ---
 ## References
