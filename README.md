@@ -70,6 +70,63 @@ Two potentials can produce nearly identical `ψ(T)` while having quite different
 * Two mis-specified periodicity/seam-continuity test checks - both initially used naive endpoint-value comparisons that flagged legitimate steep local behavior as a bug; both were fixed by comparing against the typical local variation instead of an absolute threshold — a reusable lesson about what makes a numerical check well-posed, not just a one-off fix.
 
 ---
+## Forward FNO: Harness, Learnability Gate, and the Norm-Emergence Result
+This is the project's go/no-go gate. Before investing in the response machinery, we must establish that a 16-mode FNO can learn the forward map `(ψ₀, V) → ψ_T` at all on this data. Unlike the Burgers precedent, this is not a foregone conclusion: Burgers is dissipative (viscosity destroys high-k content, so a low-mode truncation discards energy that was decaying anyway), whereas the Schrödinger evolution is unitary — there is no viscosity to forgive the truncation, so mode-cutoff can in principle corrupt the forward map, not only the response. A forward failure here would be physics (T too long, energy fled above mode 16), not a bug — and would force a data retune before proceeding. The model itself was already adapted to complex I/O; this is about the training harness and the gate decision.
+
+### Key Results
+* **Learnability probe**: 300 training samples, 200 held-out test, 150 epochs, flat LR 3e-4 (no schedule). Test rel-L2 fell 0.998 → 0.104, monotone, still descending at the final epoch (no plateau). The train/test gap (0.059 vs 0.104) is ordinary overfitting on a 300-sample set — the kind more data closes — not a wall. This cleared the top row of the pre-agreed interpretation fork: forward is learnable, GO. Critically, T=0.5 cleared the gate with headroom rather than scraping the edge, which matters downstream: it means energy has not all fled above the mode-16 cutoff, leaving room for the off-diagonal mode-coupling the response operator lives on.
+
+* **Full training run**: All 2000 samples, 500 epochs, exponential-decay LR (init `3e-4`, `×0.5` every 100 epochs, staircase). `Final test rel-L2 = 0.0169 (1.7%)` — a genuinely good operator surrogate. The probe extrapolation held: 300 samples/flat-LR floored at 0.104; full data + schedule reached 0.017. The train/test gap is small (0.0129 vs 0.0169), so the model is neither overfit nor obviously data-starved at N=2000. The curve was flat over the final ~50 epochs, so 500 epochs sufficed.
+
+* **Norm-emergence**: Norm-violation — the mean departure of `∫|ψ_pred|²dφ` from 1 — was logged every epoch but never entered the loss. It nonetheless fell from `~1.0` (untrained) to `0.0057`, a ~6× improvement over the probe's 0.037, purely as a byproduct of forward accuracy. This is the project's central question previewed in miniature: *does physical structure emerge from forward-only training?* Here, partially — forward accuracy alone dragged `ψ_T` to within ~0.6% of the unit sphere. But two features matter for the honest read:
+1. It did not reach machine-zero. The surrogate is approximately-but-not-exactly physical.
+2. It plateaued in lockstep with rel-L2 around epoch 400, rather than continuing to fall independently.
+
+Norm-violation tracks forward error rather than vanishing on its own. The residual unphysicality is coupled to the residual forward error — they are not independent quantities the network drives to zero separately. 
+
+### Architecture 
+* **No normalization (ψ kept raw)**: Burgers normalized inputs by train mean/std; here we deliberately do not. ψ is O(0.4) (unit-norm forces it), V is O(1), the grid is O(1) — all already network-friendly — and the relative-L2 loss is scale-robust regardless. The decisive reason is the norm diagnostic: normalizing ψ would corrupt the unit-norm structure and force a denormalize step before computing `∫|ψ|²dφ`, introducing one more place for a silent constant error. Raw ψ ⇒ the sum is the probability integral, testable directly against 1.0.
+
+* **Complex ψ₀ recombined at the data boundary, split to channels inside the model**: On disk ψ₀ lives as two real arrays (`u0_re, u0_im`); `FNO.__call__` consumes a complex psi0 and splits it via `jnp.real/jnp.imag` on its first line, stacking `[Re ψ₀, Im ψ₀, V, grid]` into 4 input channels. So `load_split` must recombine `u0_re + 1j*u0_im` before the model sees it. (This is the load-bearing line — see Bugs.) 
+
+* **Metric**: Frobenius norm over stacked-real channels = complex L2, with no complex array formed. The model emits `(nx, 2) = [Re ψ_T, Im ψ_T]`; the target stacks identically. `relative_l2` takes `jnp.linalg.norm(..., axis=(-2,-1))`, collapsing both the spatial and Re/Im axes into one per-sample scalar. This handles a single `(nx,2)` sample and a `(B,nx,2)` batch with the same code. The loss stays real-valued, so gradients stay clean.
+
+* **Norm-violation as a passive observable**: This is a thesis commitment, not an oversight. Penalizing norm-violation would answer a different question — "can an FNO be trained to conserve norm?" (trivially yes; that is engineering) — and would destroy the emergence result by making norm-violation a tuned input rather than a measured output. Forward-only training answers the scientific question: "does norm conservation emerge from accuracy alone?" The diagnostic rides in `eval_step` and is logged every epoch as a first-class metric because its trajectory is a result.
+
+
+## Infrastructure 
+
+All new code lives in `scripts/train.py` (functions reused by every later phase) and `scripts/probe.py` (disposable). Run from repo root as `python -m scripts.train` / `python -m scripts.probe`.
+
+Functions added this phase:
+
+* `load_split(path, nx=128) -> (psi0_complex (N,nx), V (N,nx), uT (N,nx,2))` — recombines split-complex ψ₀; casts data to float32/complex64 at the boundary.
+* `make_batches(psi0, V, uT, batch_size, key)` — three-way yield (was two-way in Burgers), JAX-PRNG shuffle for reproducibility.
+* `relative_l2(pred, true)` — the stacked-real complex-L2 metric above.
+* `norm_violation(pred, nx)` — mean `|∫|ψ|²dφ − 1|`, `dφ=2π/nx`; `nx` passed explicitly (not read inside the jitted closure) so it stays a concrete Python int at trace time.
+* `train_step / eval_step` — three-input signature; `eval_step` returns a pair (`rel_l2, norm_violation`).
+* `train(cfg, n_train=None, seed=None)` — `n_train` subsetting is baked in now so the (modes × N) grid reuses this driver with no refactor. CLI: `--n_train, --seed`.
+* `get_git_commit()` — logs exact code state per run (provenance discipline).
+
+MLflow logging: per-run params include `git_commit, lr_decay_rate, lr_decay_every`, and `t_end` (logged because it is still an open decision). Per-epoch metrics: `train_rel_l2, test_rel_l2, norm_violation`.
+
+Checkpointing: every 50 epochs plus a final. Naming `fno_N{n}_seed{seed}_*` — preserving the artifact-path discipline that has bitten this project before. `fno_N2000_seed0_final.eqx` is a future input, not disposable.
+
+### Bugs, traps, and fixes
+
+* Silent `re/im` recombination: If real-only ψ₀ reaches the model, `jnp.imag(real_array)` returns all zeros with no error — the operation is legal on a real array, just semantically wrong. The model then trains on `[Re ψ₀, 0, V, grid]`, learns some plausible-looking map, and floors out mysteriously with no crash. Same genus as the float32-FFT drift: no exception, just quietly wrong output. Fix: `load_split` recombines to complex; the `∫|ψ₀|²dφ = 1.0` check catches any botch physically (a mangled recombination will not integrate to 1).
+
+* `relative_l2` is global-phase-sensitive, not phase-invariant: The `Frobenius = complex-L2` identity is pure algebra (`|z|² = Re² + Im²`), not a U(1) symmetry. Multiplying ψ by a global phase `e^{iθ}` does change `‖ψ_pred − ψ_true‖`. This is acceptable here only because we match the solver's fixed, deterministic phase convention — no gauge freedom is introduced. 
+
+* x64 leaks into model-internal arrays. `jax_enable_x64` is a global flag. The `.astype(float32)` casts in `load_split` pin the data, but the model builds `grid = jnp.linspace(...)` internally in `FNO.__call__`; under x64 that becomes float64 and silently promotes the entire forward pass (≈2× slower, and it stops matching the validated float32 numbers). No error. Fix/discipline: run training as a fresh `python -m scripts.train process` (x64 off by default), never in an x64-enabled notebook kernel. This exact collision becomes deliberate and central where `J_true` (float64, from the solver) and `J_FNO `(float32, from this model) must be reconciled in one process.
+
+### Math background 
+
+* Why Frobenius-over-channels equals complex L2: For a complex vector `ψ` with components `ψ_i`, `‖ψ‖₂² = Σ_i |ψ_i|² = Σ_i (Re ψ_i² + Im ψ_i²)`. The right-hand side is exactly the sum of squares of every entry of the real `(nx, 2)` array — i.e. its squared Frobenius norm. So taking the Frobenius norm of the stacked-real representation reproduces the complex L2 norm identically, by the definition of complex modulus. No symmetry argument is needed, and none is available: the norm of a difference is phase-sensitive (see Bugs).
+
+* Why `∫|ψ|²dφ = 1` is the right check: On the ring of circumference `L=2π` with `nx` grid points, the measure element is `dφ = 2π/nx`. Unitary evolution conserves the L² norm of ψ exactly, and the stored data enforces `∫|ψ|²dφ = 1` as an invariant. A learned surrogate has no built-in reason to respect this — so the deviation of `∫|ψ_pred|²dφ` from 1 is a direct, interpretable measure of how unphysical the fit is, and (because we kept ψ raw) is computable straight from the network output with no denormalization.
+
+* Forward vs response: The forward map returns only the endpoint `ψ(T)`; the response `∂ψ_T/∂V` is the propagator sandwiched around the perturbation and integrated over the whole path, `−i∫₀ᵀ U(T,t) δV U(t,0) ψ₀ dt`. Two potentials can produce near-identical `ψ(T)` yet quite different responses — the derivative sees the path, the state sees only the endpoint. Here, we validated the forward (1.7%); whether its Jacobian is equally good is the next question, and the reason "forward-good ≠ response-good" is a real possibility rather than a technicality.
 
 ---
 ## References
