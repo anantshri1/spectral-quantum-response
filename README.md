@@ -2,6 +2,38 @@
 A systematic study to test whether a Fourier Neural Operator (FNO) trained only on forward evolution `(ψ₀, V) → ψ_T` learns the correct response `∂ψ_T/∂V `as a byproduct.
 
 ---
+## Background and Setup
+The forward map only constrains the endpoint `ψ(T)`. The response is the propagator sandwiched around a perturbation and integrated over the whole trajectory:
+
+```
+δψ_T = -i ∫₀ᵀ U(T,t) · δV · U(t,0) · ψ₀ dt
+```
+
+Two potentials can produce nearly identical `ψ(T)` while having quite different response operators — the derivative sees the path, the endpoint does not. Therefore, assessing whether a model only sees the endpoints during training or also learns the correct path-sensitivity is a real empirical question.
+
+### System setup
+
+**1D free-rotor / quantum-pendulum problem**: a particle on a periodic ring (`circumference L=2π, ℏ=m=R=1`), Hamiltonian `H = -½∂²/∂φ² + V(φ)`, untwisted boundary conditions (`θ=0`, standard FFT applies directly — twisted BC would introduce Aharonov–Bohm/θ-vacuum physics we deliberately avoid). `ψ₀` is a random Gaussian wavepacket (center, width, integer carrier momentum `k₀∈[-4,4])`; V is a smooth Gaussian random field with a tunable spectral length-scale.
+
+**Strang splitting**: K (kinetic) is diagonal in Fourier space, V (potential) is diagonal in real space, and `exp(-i(K+V)dt) ≠ exp(-iKdt)exp(-iVdt)` since `[K,V]≠0`. Symmetrizing as `exp(-iVdt/2)·exp(-iKdt)·exp(-iVdt/2)` cancels the leading commutator term, buying 2nd-order global accuracy for one extra FFT. Implemented as `jax.lax.scan` over timesteps rather than a Python for loop.
+
+**Solver**: split-step Fourier (Strang splitting): `exp(-iVdt/2)·exp(-iKdt)·exp(-iVdt/2)`, implemented as `jax.lax.scan` over timesteps (not a Python loop — scan is what makes autodifferentiating through the ~10,000-step evolution tractable; a Python loop would make the response phase computationally impossible). Kinetic phase is a pointwise multiply in Fourier space (`k` from `fftfreq`, exact integers because `L=2π`); potential phase is a pointwise multiply in real space. Validated against four independent physics gates: exact plane-wave phase, norm conservation to float64 machine precision, analytic Gaussian-wavepacket spreading rate, and an autodiff-vs-finite-difference gradient check (clean U-shaped error valley bottoming at ~3×10⁻¹⁰, confirming `jax.jvp` through the scan is correct).
+
+> Gate 1 — plane-wave eigenstate phase. With V=0, ψ=e^{ikφ} is an exact eigenstate of the kinetic operator, so one Strang step should multiply it by the analytically-known phase exp(-i·½k²·dt) with no shape change. Checked to atol=1e-5. This validates the FFT round-trip and the k-grid convention (jnp.fft.fftfreq(nx, d=1/nx), not arange — the top half of the array holds negative frequencies, e.g. bin 64 of a 128-point grid is k=-64 not k=+64, a silent-bug risk since the solver would run without error but with wrong kinetic energies).
+
+> Gate 2 — norm conservation. Unitary evolution must conserve ∫|ψ|²dφ exactly. This tests the composed solver (all three Strang factors, many steps, real V) rather than individual factors. First run in float32 showed drift growing with nt at fixed total time (3.3e-5 → 3.4e-4 across nt=500→4000) — diagnosed via an nt-scaling probe as accumulated per-step FFT round-off, confirmed by re-running in float64 where drift collapsed to ~5e-14 and stayed flat regardless of nt. This result is what locked the precision split (solver/data-gen/response in float64, FNO training in float32) — decided from evidence, not assumed upfront, since unitary evolution has no dissipation to forgive float32 errors the way Burgers' viscosity did.
+
+> Gate 3 — Gaussian wavepacket spreading. Tests genuine non-eigenstate dynamics (gate 1 only tested an eigenstate that doesn't change shape): a free packet's width should grow as σ(t)²=σ₀²+(t/2σ₀)². First attempt failed at t=0 (29% error before any evolution occurred), correctly diagnosed as a measurement bug rather than a solver bug, since nothing had run yet — traced to a √2 mismatch between the amplitude-width of the constructed ψ and the density-width (|ψ|²) the analytic formula assumes. A second attempt still failed at t=0 by the same √2 in the opposite direction, from over-correcting; resolved by collapsing to one single source of truth (pick amplitude-width a, feed the formula a/√2 and nothing else). Once fixed, t=0 agreed to ~1e-12 and dynamics tracked the analytic curve to ~1e-9, with error growing smoothly with t (expected accumulated round-off) and no sign of the ring's periodicity corrupting the result within the tested window.
+
+> Gate 4 — gradient check (autodiff vs. finite differences). The gate that specifically de-risks Phase 4: since J_true will be computed by jax.jvp through the full scan, this validates that differentiation, not just evaluation, is correct. Central FD along a random direction δV, swept across ε∈[10⁻⁸,10⁻¹]. First single-point check (ε=1e-6) gave 1.9e-7 relative error — plausible but not sufficient evidence alone. A one-sided sweep (only small ε) showed monotonically rising error toward small ε, initially read as concerning, until recognized as only the round-off wall (∝1/ε, from amplifying fixed floating-point noise by dividing by shrinking ε) — the truncation wall (∝ε²) hadn't been sampled yet because this particular map is smooth enough that its valley floor sits at unusually large ε (~10⁻³) rather than the generic textbook estimate of ~10⁻⁵–10⁻⁶. Extending the sweep to large ε revealed the missing wall, giving a complete, textbook U-shaped valley bottoming at 2.8×10⁻¹⁰ with the correct power-law slope on each side (ε² falling, 1/ε rising) — the strongest form of confirmation, since a genuinely broken gradient would show a floor (FD converging to the true derivative while autodiff sits a fixed, non-vanishing distance away) rather than a valley reaching machine-precision-level agreement.
+
+**Precision**: solver, data generation, and the "ground truth" response Jacobian all run in float64; FNO training runs in float32. This is a deliberate split, not an oversight — long unitary evolutions are precision-sensitive (no dissipation to forgive float32 round-off) and get differentiated through, while the FNO is a shallow, dissipation-tolerant learned function. Precision floor for `train.py` (f64-trained, canonical M=16 checkpoint) is forward rel-L2 = 0.0192, response error = 0.5787.
+
+**FNO**: hand-implemented spectral convolution, `n_modes` as the swept architecture dial (2–16 in various experiments), complex `ψ` handled as two real channels at the model boundary (`w_real/w_imag` stored separately — complex-typed Adam second moments are ill-defined and destroy training).
+
+**Response machinery** (`src/response.py`): `J_true = jacfwd` of `V ↦ ψ_T` (V held real, ψ₀ fixed — this differentiation is Wirtinger-clean because V is real, unlike differentiating w.r.t. complex ψ₀, which we deliberately avoid). `J_fno` is the identical machinery applied to the trained surrogate. Both are rotated from position space to mode space via FFT/IFFT to get `J(k,q) = ∂ψ̂_k/∂V̂_q`, interpreted as a physical mode-coupling operator (for a local potential, natively off-diagonal via `⟨k|V|q⟩ = V̂(k-q)`). `response_error = ‖J_fno - J_true‖_F / ‖J_true‖_F`.
+
+---
 ## References
 * **Derivative-informed neural operator acceleration of geometric MCMC for infinite-dimensional Bayesian inverse problems**, Lianghao Cao, Thomas O'Leary-Roseberry, Omar Ghattas. (2024). [arXiv: 2403.08220](https://arxiv.org/abs/2403.08220).
 * **Derivative-Informed Operator Learning for Finance: On-the-Fly Greeks, Surfaces, Hedging, and Control**, Miquel Noguer I Alonso. (2026). [arXiv: 2606.05900](https://arxiv.org/abs/2606.05900).
