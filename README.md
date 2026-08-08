@@ -21,11 +21,7 @@
 * **Redefining Neural Operators in d+1 Dimensions**, Haoze Song, Zhihao Li, Xiaobo Zhang, Zecheng Gan, Zhilu Lai, Wei Wang. (2025). [arXiv: 2505.11766v1](https://arxiv.org/abs/2505.11766v1).
 * **Equinox: neural networks in JAX via callable PyTrees and filtered transformations**, Patrick Kidger, Cristian Garcia. (2021). [arXiv: 2111.00254](https://arxiv.org/abs/2111.00254).
 * **Neural Operators: FNO and DeepONet**. [Watch here](https://www.youtube.com/watch?v=COEItKEZ-is).
-* **U-net clearly explained**. [Watch here](https://www.youtube.com/watch?v=oxcgx75k6yU).
 * **Fourier Neural Operator for Parametric Partial Differential Equations**, Zongyi Li, Nikola Kovachki, Kamyar Azizzadenesheli, Burigede Liu, Kaushik Bhattacharya, Andrew Stuart, Anima Anandkumar. (2020). [arXiv: 2010.08895](https://arxiv.org/abs/2010.08895).
-* **A Comprehensive Review of U-Net and Its Variants: Advances and Applications in Medical Image Segmentation**, Wang Jiangtao, Nur Intan Raihana Ruhaiyem, Fu Panpan. (2025). [arXiv: 2502.06895](https://arxiv.org/abs/2502.06895).
-* **U-Net: Convolutional Networks for Biomedical Image Segmentation**,  Olaf Ronneberger, Philipp Fischer, Thomas Brox. (2015). [arXiv: 1505.04597](https://arxiv.org/abs/1505.04597).
-* **U-Net Architecture Explained** [here](https://www.geeksforgeeks.org/machine-learning/u-net-architecture-explained/).
 * **How a Fourier Neural Operator Learns to Solve PDEs — and Where It Falls Short**, Gurpreet Singh Hora, Prakhar Kapoor, Albert Matveev. (2026). [Here](https://www.physicsx.ai/newsroom/how-a-fourier-neural-operator-learns-to-solve-pdes----and-where-it-falls-short).
 
 
