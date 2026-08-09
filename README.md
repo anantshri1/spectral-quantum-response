@@ -246,9 +246,9 @@ Gate before trusting the sweep: `M=16` truncation must be the identity (empty sl
 | 16 | 0.5113 | 0.0056 |  <- == full model; matches k0-sweep grand mean (consistency gate)
 
 These are graphed below:
-
+<p align="center">
 <img width="720" height="494" alt="image" src="https://github.com/user-attachments/assets/bcd86dd6-ed53-44e7-804e-b4e2f1d53a0f" />
-
+</p>
 ### Retrain arm, and the response floor
 * **The missing floor baseline**: Before this block, "`response error = 0.511`" had no interpretable anchor — was that mostly-right or mostly-wrong? Floor baseline: an FNO with the exact training architecture (`M=16`, same channel width, same block count) but never trained — random initialization only, run through the identical response machinery.
  Result: `response error = 1.0000 ± 0.0004`, flat to four decimal places across every |k₀| bin. This is the clean "predicts nothing correlated with the true response" zero-information floor. Its flatness across |k₀| is itself a useful check: it confirms the variation seen in the k₀ sweep is a property of trained models, not an artifact of how the error metric scales with k₀.
@@ -269,8 +269,9 @@ These are graphed below:
 
  Interpretation: `n_modes` tuned purely for forward performance is not the same `n_modes` that's optimal for response fidelity, and this is invisible unless you measure response directly.
 
+<p align="center">
 <img width="750" height="500" alt="image" src="https://github.com/user-attachments/assets/ddd8641a-b639-40c5-8df1-eab7098c7753" />
-
+</p>
 
 ### Clip vs Retrain
 
@@ -304,8 +305,9 @@ The single most striking number here: `M=12` has better response fidelity than `
 ### Error Map Localization
 An attempt was made to test the project's namesake spatial claim directly — does response error concentrate specifically near the mode cutoff in `(k,q)` space? `J_true`, `J_FNO(M=12)`, and `J_FNO(M=16)` were computed and rotated into mode-coupling space for several samples spanning different k₀, and error maps `|J_FNO − J_true|` were plotted with a candidate reference line at `k−q=±M`.
 
+<p align="center">
 <img width="903" height="1000" alt="image" src="https://github.com/user-attachments/assets/58374637-331a-43b6-a197-9360d0950af1" />
-
+</p>
 
 This was explicitly flagged as inconclusive rather than banked as a result. The reference line's geometry is unresolved: the FNO's internal truncation acts on Fourier mode indices inside the spectral-conv layers, which is not obviously the same axis as k−q in the end-to-end input-output Jacobian's mode-coupling basis — so a diagonal line at k−q=M may simply be testing the wrong thing. What the plot does show unambiguously, without relying on the reference line at all: the M=16 error band is visibly brighter and sharper than the M=12 error band at the same locations, which is a spatial re-confirmation of the aggregate finding but not new information, and not a localization claim. 
 
@@ -314,6 +316,91 @@ This was explicitly flagged as inconclusive rather than banked as a result. The 
 * Ablations need a floor, not just relative comparisons. "0.511" was uninterpretable until measured against a random-init zero-information baseline.
 * Clipping a trained model and training a smaller model from scratch are different experiments that must not be conflated — they can and did give substantially different answers (clip overstates damage relative to retrain), and the gap between them was itself the more informative result.
 * Optimizing one metric can silently mis-tune another you aren't measuring — `n_modes` chosen correctly for forward accuracy turned out to be well past the response-fidelity optimum, and this was invisible without deliberately measuring response as its own axis.
+
+---
+## Derivative-informed Neural Operator (DINO) Training
+We previously established that an FNO trained only on forward evolution `(ψ₀, V) → ψ_T` recovers only `~41–49%` of the true response operator `∂ψ_T/∂V` as an unsupervised byproduct, and that this recovery is worse, not better, with more spectral modes (M=16 underperforms M=12). We now ask: *can an explicit derivative-matching loss term close that gap, and at what cost to forward accuracy?*
+
+### JVP Matching
+Rather than matching the full 128×128 response Jacobian at every training step (prohibitively expensive — one `jacfwd` per sample is 128 forward passes), we match Jacobian-vector products in random directions. For a unit direction `v` in perturbation-space, the loss adds
+```
+L = rel_L2(ψ_T) + λ · ‖J_fno·v − J_true·v‖² / C_norm
+```
+Each term costs one extra forward-mode JVP through the model — $\mathcal O(1)$ overhead, not $\mathcal O(128)$. This is a stochastic estimator of full-Jacobian (Frobenius) matching: in expectation over isotropic random directions, minimizing `‖J_fno·v − J_true·v‖²` minimizes `‖J_fno − J_true‖_F`, which is exactly the metric we report. Directions were drawn isotropically (not from a "smooth potential" family) specifically so the training objective and the evaluation metric stay aligned — training on an easier direction family would have let the loss improve without the reported metric moving.
+
+#### Precompute
+8 isotropic unit directions per training sample, plus `J_true·v` for each (computed once offline via `jax.jvp` through the reference solver — the same closure the existing `jacobian_true` function differentiates, gated to float64 machine-epsilon agreement, `~7e-15` relative error). This turns an expensive full-Jacobian target into a cheap lookup: each training step draws one of the 8 precomputed directions per sample and reuses its precomputed reference, so the solver never runs inside the training loop.
+
+#### Normalization
+The response residual is divided by a single global constant, `C_norm = the mean of ‖J_true·v‖²` over all 16,000 precomputed (sample, direction) pairs (empirically `≈2.1×10⁻³`). This constant is small because an isotropic random direction is mostly high-frequency, and the true response operator's mode-coupling is concentrated near low-order offsets (`k−q ≈ k₀`) — so most random directions barely engage the response at all. Per-direction relative normalization was ruled out for the same reason: it would divide by a near-zero denominator on exactly those directions.
+
+#### λ schedule
+Linear warmup from 0 to the target λ over the first 50 epochs, then held constant — built in as first-class config (`dino_lambda, dino_warmup_epochs`), not as a later patch, mirroring the existing LR-decay schedule pattern. `Warmup=0` reduces to a constant schedule and was never itself ablated (a deliberate scope cut — nothing diverged at any λ tested, so there was no empirical pressure to isolate its necessity).
+
+### The `λ=0` gate, and the precision discovery it forced
+
+The plumbing gate for this whole approach was: training with `λ=0` (the DINO term multiplied by zero) must reproduce the canonical forward result exactly, since it should be running identical forward training with an inert extra term. It did not — `λ=0` gave forward `rel-L2 0.0192` against the canonical `0.0169`, a 14% gap far outside floating-point noise.
+
+Diagnosis ruled out a wiring bug: re-running the legacy `train()` function, byte-for-byte, reproduced 0.0169 exactly. The only variable between our `λ=0` run and that reproduction was numerical precision — initial training in the forward pass is in float32; we instead train in float64, because the response JVP machinery requires x64 to be enabled globally, and JAX's x64 flag promotes all `jnp` arrays in scope, including the FNO's own forward pass, not just the response computation. There was no way to keep the FNO in f32 while the response machinery ran in f64 without a much more error-prone mixed-precision training step, so we accepted the f64 regime and re-baselined: every comparison is measured against a fresh f64 forward-only floor, not against f32 numbers.
+
+This mattered scientifically, not just numerically: measuring the response error of the f64 forward-only model gave `0.579` (vs f32's `0.511`) — response fidelity is more precision-sensitive than forward accuracy (a 0.002 forward shift produced a 0.068 response shift). We find **DINO recovers ~90%+ of the true response operator at zero forward cost — forward accuracy improves, it does not trade off**; these are summarized below
+
+| λ | forward | response | % of recovered response | resp spread |
+|--------|---------|----------|-----------|-------------|
+| 0      | 0.0187  | 0.587    | 41.3%     | 0.017       |
+| 0.1    | 0.0168  | 0.103    | 89.7%     | 0.004       |
+| 1      | 0.0144  | 0.0725   | 92.8%     | 0.003       |
+| 10     | 0.0136  | 0.0567   | 94.3%     | 0.004       |
+
+Two shapes worth explaining:
+* No Pareto tradeoff. We expected sweeping λ to trace a frontier — better response bought with worse forward. Instead forward improves sharply from λ=0→1 then plateaus (the λ=1→10 move, 0.0144→0.0136, is within seed noise), and never degrades at any tested λ. The derivative-matching term functions as a pure regularizer: constraining the model's linearization toward the true dynamics pulls the whole solution toward the correct trajectory, and the forward endpoint benefits as a side effect. This reframes what "λ sweep" even means here — there's no knob to trade, just a term that helps both objectives up to a point of diminishing (never negative) returns.
+* The response knee is below λ=0.1. The single largest jump — a 5.7× error reduction — happens at the first nonzero λ tested (0.587→0.103). Pushing λ two further orders of magnitude (0.1→10) buys only a further 0.103→0.057, i.e. most of the recoverable structure is captured almost as soon as the derivative signal is present at all, and the metric asymptotes rather than continuing to fall linearly.
+
+We display the results comparing the `M=16` sweep with DINO with the `M=12` (`seed 0: 0.2455 | seed 1: 0.2951 | seed 2: 0.2458 -> mean 0.262, spread 0.023
+forward: 0.0212/0.0209/0.0203 -> mean 0.0208`) results below:
+<p align="center">
+<img width="700" height="690" alt="image" src="https://github.com/user-attachments/assets/ab82e6df-3c6a-4ccd-a667-2896bf92663b" />
+</p>
+
+#### Confounds explicitly ruled out:
+* Metric gaming via a degenerate Jacobian: the relative-Frobenius metric structurally cannot be gamed downward — a collapsed (near-zero) `J_fno` pushes the metric toward 1.0 (⁠`‖0 − J_true‖/‖J_true‖ = 1⁠`), not toward 0. A low reported error can only mean genuine structural agreement with `J_true`.
+* Overfitting to the 8 training directions: the reported metric is computed on the full 128×128 Jacobian, direction-independent, via the same machinery used before — while training only ever saw single-direction JVPs. The model generalized from 8 sampled directions per sample to the entire operator.
+* Cherry-picked samples: min/max across the 200-sample test set at λ=1 was 0.037/0.182 — the entire distribution moved, not a handful of easy cases.
+
+DINO beats the implicit-regularization result outright, on both metrics simultaneously. The initial headline was that shrinking the model (`M=16→M=12`) buys response fidelity "for free" — an implicit-regularization effect from reduced capacity. Measured on the same f64 baseline: `M=12` forward-only response error is `0.262 ± 0.023` (75% recovered) at forward `0.0208`. `M=16` with even the weakest tested DINO weight (`λ=0.1`) already beats this on both axes — response `0.103` (90% recovered) and forward `0.0168`, both better than `M=12`. Explicit derivative supervision at full capacity dominates the capacity-restriction trick; you no longer need to give up spectral resolution to get response fidelity.
+
+> **A secondary, unplanned finding**: DINO stabilizes response across random seeds, not just improves its mean. `M=12` forward-only has a 3-seed response spread of `0.023 (0.246 / 0.295 / 0.246)` — the noisiest measurement in the whole project. Every DINO-supervised point, at both `M=12` and `M=16`, has spread `≤0.004`, roughly 6× tighter. Read mechanistically: a forward-only model's response quality depends on which of many forward-equivalent solutions the optimizer happens to land on (seed-dependent); the derivative term removes that degeneracy by penalizing exactly the wrong-linearization solutions, so different seeds converge to nearly the same response quality.
+
+#### Punchline: Supervised Derivative Learning Improves Response Fidelity
+Modes 12–15 flip from a response liability to a response asset depending purely on whether the derivative is supervised. Unsupervised, the extra spectral capacity gives the optimizer more ways to reach the correct `ψ_T` endpoint via an incorrect linearization — more forward-equivalent wrong-response solutions to fall into. Supervised, that same capacity gives the model more room to represent fine response structure, and the derivative term steers it there instead of away. This is not a contradiction between the two phases —  "M=12 beats M=16" result is the unsupervised limit (λ=0 slice) of the more general statement: the sign of extra spectral capacity's effect on response fidelity is set by supervision, not fixed by the architecture alone.
+
+|λ| Sign Flip|
+|----|--------------------|
+ |0 | +0.325 (0.262->0.587) WORSE — extra modes = liability |
+ | 0.1| -0.034 (0.137->0.103) BETTER — asset |
+ | 1 | -0.019 (0.091->0.073) BETTER |
+|  10 | -0.010 (0.067->0.057) BETTER (tightest; 0.061 vs 0.066, still no overlap) |
+  
+We summarize these findings below:
+
+<img width="1000" height="621" alt="image" src="https://github.com/user-attachments/assets/80e99973-71d3-4faf-b97f-ad936af1359f" />
+
+`|J_true|`, `|J_fno(λ=0)|`, `|J_fno(λ=10)|` magnitude panels plus `|J_fno − J_true|` error-map panels, sample 0 (`k₀=+4`), `fftshift`-centered mode basis, shared colorscale. This figure revealed how DINO fixes the response: row 1 shows `λ=0` is not simply under-scaled/washed-out, it has roughly correct band magnitude but hallucinates spurious off-diagonal coupling at momentum transfers away from the true `k−q≈k₀` band; row 2 shows that spurious double-diagonal error structure (bright, err=0.58) collapsing to near-black (err=0.057) under DINO. The forward-only model isn't missing the response signal, it's inventing wrong-momentum-transfer couplings that reproduce `ψ_T` without tracing the correct propagator-sandwich path — DINO's derivative penalty suppresses exactly those.)
+
+<p align="center">
+  <img src="results/dino_error_collapse.gif" width="500">
+</p>
+
+### Bugs hit and fixed 
+* Checkpoint template shape mismatch: `load_fno_f64_ckpt` originally built its template with `cfg.n_modes` (config default, 16) regardless of the checkpoint's actual architecture — loading an `M=12` checkpoint failed with a shape-mismatch error at deserialization. Fixed by threading an explicit `n_modes` override through the loader; the same latent bug exists in `load_fno_x64` for any legacy checkpoint with `M≠16`, noted but not yet hit in practice.
+* Wrong f64/f32 loader chosen: attempting to load an f64-origin checkpoint through the f32 loader (`load_fno_x64`, which pins to f32 before deserializing) throws a dtype mismatch — this is the loader-selection bug above, distinct from the shape one; both surface as `RuntimeError` from `eqx.tree_deserialise_leave`s and are easy to conflate if not read carefully.
+* γ (git status) checkpoint-tracking hygiene: checkpoints and precompute `.npz files` (the latter ~400MB) were, until this phase's cleanup, untracked-but-unignored; added to `.gitignore`.
+
+---
+## Scope cuts 
+* Norm-violation penalty as an active loss term — logged as a passive diagnostic throughout (and it improves under DINO as a side effect), but never tested as its own supervised arm. Would need to be a separate ablation to avoid confounding attribution with the derivative-matching term.
+* OOD potentials (train on low-complexity V, test response generalization on higher-complexity V) — deferred to a later session per current plan, not started.
+* Warmup necessity — used throughout (50 epochs, held fixed across the λ sweep) as a stability precaution; never ablated against warmup-off, since nothing diverged at any tested λ and there was no empirical pressure to isolate it.
 
 ---
 ## References
