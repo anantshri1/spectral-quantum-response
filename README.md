@@ -404,6 +404,7 @@ We summarize these findings below:
 
 ---
 ## References
+* **Derivative-Informed Fourier Neural Operator: Universal Approximation and Applications to PDE-Constrained Optimization**, Boyuan Yao, Dingcheng Luo, Lianghao Cao, Nikola Kovachki, Thomas O'Leary-Roseberry, Omar Ghattas. (2025). [arXiv: 2512.14086](https://arxiv.org/abs/2512.14086).
 * **Derivative-informed neural operator acceleration of geometric MCMC for infinite-dimensional Bayesian inverse problems**, Lianghao Cao, Thomas O'Leary-Roseberry, Omar Ghattas. (2024). [arXiv: 2403.08220](https://arxiv.org/abs/2403.08220).
 * **Derivative-Informed Operator Learning for Finance: On-the-Fly Greeks, Surfaces, Hedging, and Control**, Miquel Noguer I Alonso. (2026). [arXiv: 2606.05900](https://arxiv.org/abs/2606.05900).
 * **Fourier Neural Operators for Learning Dynamics in Quantum Spin Systems**, Freya Shah, Taylor L. Patti, Julius Berner, Bahareh Tolooshams, Jean Kossaifi, Anima Anandkumar. (2024). [arXiv: 2409.03302](https://arxiv.org/abs/2409.03302).
