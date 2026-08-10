@@ -105,3 +105,22 @@ Two clean findings on the CORRECT net (f64-trained dino λ0 M16, seed0, N=200):
 - correct claim: FNO has a perturbativeness-INDEPENDENT error floor (~0.58) set by representation, not physics
 - do NOT claim "captures non-pert effects" (floor-limited, not physics-capturing); θ-vacua = off-thesis (untwisted BC), no evidence here
 - figure: results/flatness_bins.png
+
+### [CONFIRMED] 7A Block 1 — per-sample band metric (Option B, symmetric around k0)
+- band = smallest w s.t. |d-k0|<=w captures 95% of |J_true| mass; d = k-q folded, OFFSET grid
+- gate: J_true mass within |d|<=16 = 0.995 (reproduces Phase-4, cache+convention verified)
+- self-consistency: J_true own off-band mass = 0.046 ≈ 0.05 ✓
+- sample-0: k0=4, w=8 → band well inside M=16 budget → FNO off-band leak = pathology, not capacity wall
+- symmetric window chosen: Born predicts near-symmetric band (ψ̂₀(k-q))
+- fns in scripts/offband.py: band_width_for_sample, offband_mass_fraction, OFFSET
+
+### [INCONCLUSIVE — pre-registered prediction NOT met] 7A Block 2 off-band MASS
+- predicted: off-band mass liability at λ=0 (M16>M12), asset at λ>0. NOT observed.
+- observed: λ=0 M16<M12 but OVERLAP (n.s.); λ=0.1 M16>M12 (only liability row); λ=1,10 M16<M12 asset
+- KEY TENSION: λ=0 M16 response ERROR ≫ M12 (0.587 vs 0.262) but off-band MASS ≈ equal (0.140 vs 0.160)
+  ⇒ off-band MASS FRACTION is not the variable carrying the sign flip
+- λ-collapse DOES hold cleanly: M16 mass 0.140→0.094 as λ 0→10 (DINO suppresses leak) — that part survives
+- NEXT: recompute with off-band ERROR mass ‖(Jfno-Jtrue)_offband‖/‖Jfno-Jtrue‖ (phase-aware).
+  - if it flips → mechanism right, measured wrong quantity (magnitude vs error)
+  - if it also doesn't → off-band story FALSIFIED, liability is IN-BAND → different (still publishable) result
+- raw grid saved results/offband_grid.npz (26 ckpts, don't recompute)
