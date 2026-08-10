@@ -119,91 +119,17 @@ if __name__ == "__main__":
     assert float(rel) < 1e-9, "closed form disagrees with linearized solver — STOP, debug"
     print("[3b] GATE PASSED — discrete Born closed form is exact against the solver.")
 
-    # --- Block 4a: Born vs J_true, 3-sample smoke test ---
-    from src.responses import jacobian_true, response_error
-
-    V = V.astype(jnp.float64)     # J_true needs f64 V (psi0 already complex128)
-
-    print("\n[4a] Born vs J_true, first 3 samples:")
-    for s in range(3):
-        J0_s   = born_jacobian(psi0[s], nx, dt, nt)
-        Jt_pos = jacobian_true(psi0[s], V[s], nx, dt, nt)
-        Jt_kq  = mode_coupling_matrix(Jt_pos)
-        err    = float(response_error(J0_s, Jt_kq))
-        print(f"    sample {s}: Born-vs-Jtrue rel-Frob = {err:.4f}")
-
-    # --- Block 4b: Born vs J_true across all test samples ---
+    # ===== Block 5 — canonical response cache (f64-trained seed0) =====
     import os, time
-    from src.responses import jacobian_true, response_error   # (no-op if 4a ran)
-
-    N = psi0.shape[0]                      # 200
-    FNO_FLOOR = 0.587                      # forward-only FNO response error (3-seed)
-
-    born_errs = np.empty(N)
-    t0 = time.time()
-    for s in range(N):
-        J0_s   = born_jacobian(psi0[s], nx, dt, nt)
-        Jt_kq  = mode_coupling_matrix(jacobian_true(psi0[s], V[s], nx, dt, nt))
-        born_errs[s] = float(response_error(J0_s, Jt_kq))
-        if (s + 1) % 25 == 0:
-            print(f"    {s+1:3d}/{N}   running mean = {born_errs[:s+1].mean():.4f}"
-                  f"   ({time.time()-t0:.0f}s)")
-
-    os.makedirs("results", exist_ok=True)
-    np.save("results/born_errs_200.npy", born_errs)      # <-- SAVE (never recompute J_true)
-    print(f"[4b] saved results/born_errs_200.npy")
-
-    # --- summary: the number that picks the headline branch ---
-    m, sd = born_errs.mean(), born_errs.std()
-    print(f"\n[4b] Born vs J_true over {N} samples:")
-    print(f"     mean {m:.4f}  std {sd:.4f}  median {np.median(born_errs):.4f}")
-    print(f"     min  {born_errs.min():.4f}  max {born_errs.max():.4f}")
-    print(f"     FNO forward-only floor = {FNO_FLOOR}")
-    frac_born_better = float((born_errs < FNO_FLOOR).mean())
-    print(f"     Born beats FNO on {frac_born_better*100:.0f}% of samples")
-    print(f"     mean Born {'<' if m < FNO_FLOOR else '>'} FNO floor "
-          f"→ {'FNO worse than 1st-order PT' if m < FNO_FLOOR else 'response non-perturbative'} branch")
-
-    # --- Block 5a: canonical cache smoke test (3 samples) ---
-    from scripts.compute_response import load_fno_x64
+    from tests.measure_floor import load_fno_f64_ckpt
     from src.responses import jacobian_true, jacobian_fno, response_error
+    from scipy.stats import pearsonr, spearmanr
 
-    model = load_fno_x64("checkpoints/fno_N2000_seed0_final.eqx", cfg)
-
-    print("\n[5a] smoke: J_true / Born / FNO, first 3 samples:")
-    for s in range(3):
-        Jt_kq  = mode_coupling_matrix(jacobian_true(psi0[s], V[s], nx, dt, nt))
-        J0_s   = born_jacobian(psi0[s], nx, dt, nt)
-        Jf_kq  = mode_coupling_matrix(jacobian_fno(model, psi0[s], V[s]))
-        be = float(response_error(J0_s, Jt_kq))
-        fe = float(response_error(Jf_kq, Jt_kq))
-        print(f"    s{s}: Born {be:.4f} | FNO {fe:.4f}")
-
-    # --- 5a-diag: is J_fno actually f64, and does it match compute_response's own path? ---
-    s = 2
-    # (1) dtype of the FNO forward + its Jacobian
-    out_s2 = model(psi0[s], V[s])
-    Jf_s2  = jacobian_fno(model, psi0[s], V[s])
-    print(f"[diag] FNO forward dtype: {out_s2.dtype}   (expect float64)")
-    print(f"[diag] J_fno dtype: {Jf_s2.dtype}          (expect complex128)")
-
-    # (2) does model here reproduce the locked test rel-L2? (same check compute_response gates on)
-    from scripts.train import eval_step
-    rel, nv = eval_step(model, psi0, V, uT, nx)
-    print(f"[diag] FNO test rel-L2: {float(rel):.4f}   (locked: 0.0169)")
-
-    # (3) sanity: FNO error on s2 in BOTH bases must agree (rotation is unitary)
-    Jt_pos_s2 = jacobian_true(psi0[s], V[s], nx, dt, nt)
-    Jf_pos_s2 = jacobian_fno(model, psi0[s], V[s])
-    e_pos = float(response_error(Jf_pos_s2, Jt_pos_s2))
-    e_kq  = float(response_error(mode_coupling_matrix(Jf_pos_s2), mode_coupling_matrix(Jt_pos_s2)))
-    print(f"[diag] FNO s2 err  pos {e_pos:.4f} | kq {e_kq:.4f}   (must match)")
-
-    # --- Block 5b: full 200-sample canonical cache. RUN ONLY AFTER 5a PASSES. ---
-    import os, time
+    V = V.astype(jnp.float64)     # J_true needs f64 V
+    model = load_fno_f64_ckpt("checkpoints/dino_N2000_seed0_M16_lam0.0_final.eqx", cfg)
 
     N = psi0.shape[0]
-    Jtrue_kq = np.empty((N, nx, nx), dtype=np.complex128)
+    Jtrue_kq  = np.empty((N, nx, nx), dtype=np.complex128)
     born_errs = np.empty(N)
     fno_errs  = np.empty(N)
 
@@ -214,60 +140,27 @@ if __name__ == "__main__":
         Jf_kq = mode_coupling_matrix(jacobian_fno(model, psi0[s], V[s]))
 
         Jtrue_kq[s]  = np.asarray(Jt_kq)
-        born_errs[s] = float(response_error(J0_s, Jt_kq))
+        born_errs[s] = float(response_error(J0_s,  Jt_kq))
         fno_errs[s]  = float(response_error(Jf_kq, Jt_kq))
-        if (s + 1) % 25 == 0:
+        if (s + 1) % 50 == 0:
             print(f"    {s+1:3d}/{N}  Born {born_errs[:s+1].mean():.4f} "
                   f"FNO {fno_errs[:s+1].mean():.4f}  ({time.time()-t0:.0f}s)")
 
     os.makedirs("results", exist_ok=True)
-    np.save("results/Jtrue_kq_200.npy", Jtrue_kq)     # 52 MB — the reusable cache
-    np.save("results/born_errs_200.npy", born_errs)   # overwrites Block-4b (identical)
-    np.save("results/fno_errs_200.npy",  fno_errs)
-    print(f"[5b] cached Jtrue_kq_200 / born_errs_200 / fno_errs_200 to results/")
+    np.save("results/Jtrue_kq_200.npy",            Jtrue_kq)
+    np.save("results/born_errs_200.npy",           born_errs)
+    np.save("results/fno_errs_200_f64trained.npy", fno_errs)
+    print("[5] cached Jtrue_kq_200 / born_errs_200 / fno_errs_200_f64trained")
 
-    # --- consistency gate: fno_errs must reproduce the locked 0.587 ---
-    print(f"\n[5b] Born mean {born_errs.mean():.4f} (Block4b: 0.6506)")
-    print(f"[5b] FNO  mean {fno_errs.mean():.4f}  (locked floor: 0.587)")
-    # --- 5b-diag-2: is the 0.511 vs 0.587 gap a per-sample offset or a scale/convention? ---
-    import numpy as np
-    print(f"this run fno_errs: mean {fno_errs.mean():.4f} std {fno_errs.std():.4f} "
-          f"min {fno_errs.min():.4f} max {fno_errs.max():.4f}")
+    print(f"[5] Born mean {born_errs.mean():.4f} (locked 0.6506) | "
+          f"FNO mean {fno_errs.mean():.4f} (3-seed floor 0.587)")
+    assert abs(born_errs.mean() - 0.6506) < 0.01, "Born mean drifted — Born machinery changed"
+    assert abs(fno_errs.mean()  - 0.587)  < 0.04, "f64-trained seed0 far from floor — check load"
+    print("[5] gates passed — cache canonical.")
 
-    # (1) does ANY saved phase-5/6 array hold per-sample FNO response errors? scan results/
-    import glob, os
-    for p in sorted(glob.glob("results/*.npy")):
-        a = np.load(p, allow_pickle=True)
-        tag = ""
-        if a.ndim == 1 and a.shape[0] == 200 and np.all(np.isfinite(a)) and a.max() < 3:
-            tag = f"  <-- 200-vector, mean {a.mean():.4f}"
-        print(f"  {p}: shape {a.shape}, dtype {a.dtype}{tag}")
-
-    # (2) the smoking gun: is 0.5113 * const = 0.587?  (convention/scale) or additive?
-    print(f"\n  ratio 0.587 / {fno_errs.mean():.4f} = {0.587/fno_errs.mean():.4f}")
-    print(f"  (≈1.148 → ~15% scale; if this equals a clean factor it's a norm/basis convention)")
-
-    # (3) recompute ONE sample's FNO error with explicit renormalization of psi_T,
-    #     to test H-C (renorm convention) directly on s0
-    s = 0
-    def f_raw(V_):
-        o = model(psi0[s], V_); return o[:,0] + 1j*o[:,1]
-    def f_norm(V_):
-        o = model(psi0[s], V_); c = o[:,0] + 1j*o[:,1]
-        return c / jnp.sqrt(jnp.sum(jnp.abs(c)**2))          # renorm before differentiating
-    Jf_raw  = jax.jacfwd(f_raw)(V[s])
-    Jf_norm = jax.jacfwd(f_norm)(V[s])
-    Jt = mode_coupling_matrix(jacobian_true(psi0[s], V[s], nx, dt, nt))
-    e_raw  = float(response_error(mode_coupling_matrix(Jf_raw),  Jt))
-    e_norm = float(response_error(mode_coupling_matrix(Jf_norm), Jt))
-    print(f"\n  s0 FNO err  raw {e_raw:.4f} | renormed {e_norm:.4f}   (which matches your notes' s0?)")
-    
-    assert abs(fno_errs.mean() - 0.587) < 0.02, "FNO mean drifted from 0.587 — STOP, load/machinery mismatch"
-    print("[5b] GATE PASSED — FNO reproduces locked floor; cache is canonical.")
-
-    # --- the scatter's headline number: does Born predict FNO per-sample? ---
-    from scipy.stats import pearsonr, spearmanr
-    r_p, _ = pearsonr(born_errs, fno_errs)
-    r_s, _ = spearmanr(born_errs, fno_errs)
-    print(f"\n[5b] per-sample corr  Pearson {r_p:.3f}  Spearman {r_s:.3f}")
-    print(f"     {'CORRELATED → FNO inherits Born blind spots' if r_p > 0.4 else 'DECOUPLED → FNO fails for its own (spectral) reasons'}")
+    r_p, p_p = pearsonr(born_errs, fno_errs)
+    r_s, p_s = spearmanr(born_errs, fno_errs)
+    print(f"[5] Born vs FNO per-sample:  Pearson {r_p:.3f} (p={p_p:.1e})  "
+          f"Spearman {r_s:.3f} (p={p_s:.1e})")
+    print("→ CORRELATED (FNO inherits PT blind spots)" if r_p > 0.4
+          else "→ DECOUPLED (FNO fails by truncation, not perturbativeness) — 7A headliner")

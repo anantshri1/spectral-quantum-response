@@ -67,11 +67,26 @@ U depends on V only through the P factors. Differentiate w.r.t. V(x_q) and set V
 -   uncorrelated → FNO fails for spectral-truncation reasons → 7A is headliner
 - NEEDS: fno_errs[200] aligned to born_errs. results/ has ONLY J_true_*_sample0.npy (no 200-cache)
 
-### [CONFIRMED] Block 5a — FNO load pristine, s2=0.41 is REAL not corruption
-- forward f64, J_fno complex128, rel-L2 0.0169 (locked), pos==kq → machinery sound
-- s2: Born 1.04 (non-perturbative) but FNO 0.41 (fine) → Born-hard ≠ FNO-hard
-- KILLS the "FNO inherits Born blind spots" prior; points to DECOUPLED branch → 7A headliner
-- (n=1; 200-sample Pearson/Spearman in 5b decides)
+### [RESOLVED — correctly this time] 0.5113 vs 0.587 = TRAINING PRECISION, not seed, not eval-precision
+- 0.587 = M16 λ=0 f64-TRAINED, 3-seed mean (Phase 6). f64-trained weights.
+- 0.5113 = M16 seed0, fno_N2000_seed0_final.eqx = f32-TRAINED (Phase 3/5), eval'd under x64 via load_fno_x64 (cast up).
+- casting f32-trained weights → f64 ≠ f64-trained model. Different networks. 0.076 gap = the "0.511→0.587 rebase" = the retrain.
+- SUPERSEDES earlier notes: NOT seed granularity, NOT renorm. Both prior entries wrong.
+- ⚠️ today's fno_errs_200.npy = f32-TRAINED seed0. Mislabeled for the DINO-narrative scatter.
+### [DECISION NEEDED] scatter must use f64-TRAINED seed0 (the 0.587 family) to match DINO story
+- need: f64-trained M16 λ=0 seed0 checkpoint path + load_fno_f64_ckpt (no cast). Does it exist on disk?
+
+### [CONFIRMED] Block 5 RESULT (ignore all the provenance-debug churn above)
+Two clean findings on the CORRECT net (f64-trained dino λ0 M16, seed0, N=200):
+1. FNO response ≈ Born: FNO 0.5787 vs Born 0.6506 mean. Forward-only training ~ matches
+   first-order PT (0 data, closed form). → DINO 0.057 is what actually clears this floor.
+2. Born_err ⊥ FNO_err: Pearson 0.107 (p=.13), Spearman 0.097 (p=.17) → UNCORRELATED.
+   FNO fails on DIFFERENT samples than PT does → failure axis is NOT perturbativeness
+   → it's spectral truncation → 7A (off-band mode mass) is the mechanism headliner.
+   Born = the control that RULES OUT the physics ("non-perturbative") explanation.
+- claim discipline: "uncorrelated," NOT "negatively correlated" (r~0.1, n.s.)
+- figure: Born_err vs FNO_err scatter (expect blob, add r on plot)
+- canonical arrays: born_errs_200.npy, fno_errs_200_f64trained.npy, Jtrue_kq_200.npy
 
 
 ### [CACHE DEBT] recompute fno_errs[200] + save ALL 200 J_true_kq (7A/7D reuse) — pay JVP once
