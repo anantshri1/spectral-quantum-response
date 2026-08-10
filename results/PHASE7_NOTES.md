@@ -98,3 +98,10 @@ Two clean findings on the CORRECT net (f64-trained dino λ0 M16, seed0, N=200):
   truncation, not perturbativeness → Born is the control ruling out the physics explanation → 7A headliner
 - canonical: born_errs_200.npy, fno_errs_200_f64trained.npy, Jtrue_kq_200.npy, born_vs_fno_scatter.png
 
+### [CONFIRMED] 7A Block 0 — FNO error decoupled from perturbativeness (flatness figure)
+- median-Born split (med=0.602, 100/100): Born swing +0.463, FNO swing +0.016 (29× less sensitive)
+- KILLS "FNO = PT + corrections": FNO 0.571 > Born 0.419 on PERTURBATIVE samples (worse where PT is ~exact)
+- FNO beats Born on non-pert samples ONLY because Born diverges (0.88→random wall), not because FNO models them
+- correct claim: FNO has a perturbativeness-INDEPENDENT error floor (~0.58) set by representation, not physics
+- do NOT claim "captures non-pert effects" (floor-limited, not physics-capturing); θ-vacua = off-thesis (untwisted BC), no evidence here
+- figure: results/flatness_bins.png
