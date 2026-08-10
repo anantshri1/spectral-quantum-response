@@ -9,7 +9,7 @@ r_p, _ = pearsonr(born, fno)
 r_s, _ = spearmanr(born, fno)
 
 fig, ax = plt.subplots(figsize=(5.2, 5))
-ax.scatter(born, fno, s=18, alpha=0.55, edgecolor="none", color="#2b6cb0")
+ax.scatter(born, fno, s=18, alpha=0.55, edgecolor="none", color="#dd7e3f")
 
 # reference lines: the two floors + the random-response marker
 ax.axhline(0.587, ls="--", lw=1, color="#718096", label="FNO 3-seed floor 0.587")

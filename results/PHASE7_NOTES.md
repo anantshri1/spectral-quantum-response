@@ -88,18 +88,13 @@ Two clean findings on the CORRECT net (f64-trained dino λ0 M16, seed0, N=200):
 - figure: Born_err vs FNO_err scatter (expect blob, add r on plot)
 - canonical arrays: born_errs_200.npy, fno_errs_200_f64trained.npy, Jtrue_kq_200.npy
 
+### [AUDIT CLOSED] Born baseline fully verified (survived 5 provenance rounds)
+- 0.5787 (our f64 run) == 0.5787 (Phase6 logged λ0 seed0) BIT-EXACT → FNO axis correct, floor provenance nailed
+- 3-seed 0.587 spread 0.017; seed0 +0.008 consistent
+- machinery unchanged from Phase5: reproduced s0=0.3862 AND M16 grand-mean 0.5113 bit-exact (f32 net)
+- Born gated 7.7e-14; alignment by construction; checkpoint semantics = forward-only ✓
+- RESULT (manuscript): FNO marginally beats PT on mean (0.579 vs 0.651) BUT per-sample uncorrelated
+  (Pearson 0.107, Spearman 0.097, n.s.) → FNO ≠ PT, orthogonal error geometry → failure axis is
+  truncation, not perturbativeness → Born is the control ruling out the physics explanation → 7A headliner
+- canonical: born_errs_200.npy, fno_errs_200_f64trained.npy, Jtrue_kq_200.npy, born_vs_fno_scatter.png
 
-### [CACHE DEBT] recompute fno_errs[200] + save ALL 200 J_true_kq (7A/7D reuse) — pay JVP once
-
-### Derivation
-- (fill block-by-block)
-### Gate: closed-form J0 vs jacfwd(evolve) at V=0  → target rel-err ~1e-12
-- result: ______
-### Science: response_error(J0, J_true) over 200 samples
-- Born < 0.587 forward-only? → headline branch: ______
-- Born >> 0.587? → response is non-perturbative → learning-it-is-nontrivial branch
-
-## Artifact paths (Phase 7)
-- ckpt: checkpoints/fno_N2000_seed0_final.eqx
-- data: data/test.npz  (keys: psi0, V, uT, p_k0)
-- born out: results/born_J0_<...>.npy   (TBD naming)
