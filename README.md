@@ -1,5 +1,20 @@
-# Derivative-Informed Operator Learning for Quantum Response Functions
-A systematic study to test whether a Fourier Neural Operator (FNO) trained only on forward evolution `(ψ₀, V) → ψ_T` learns the correct response `∂ψ_T/∂V `as a byproduct.
+# Derivative-Informed Fourier Neural Operators for learning Quantum Response Functions
+A systematic study to test whether a Fourier Neural Operator (FNO) trained only on forward evolution of a quantum wavefunction `(ψ₀, V) → ψ_T` learns the correct response `∂ψ_T/∂V `as a byproduct.
+
+> We study the **1D Time-Dependent Schrödinger Equation** describing a particle on a ring here. We start from the time-independent evolution of the particle on a ring:  $-\frac{\hbar}{2m}\frac{\partial^2\psi}{\partial x^2} = E\psi(x)$ subject to periodic boundary conditions. Periodic boundary conditions allow us to define a new variable $\varphi = \frac{x}{R}$ and restate the TISE in polar coordinates $-\frac{\hbar}{2mR^2}\frac{\partial^2\psi}{\partial\varphi^2} = E\psi$, where $E = \frac{L_z^2}{2I}$ in terms of the angular momentum $L_z$ and the moment of inertia $I$. The equation takes the form $\psi"(\varphi) + n^2\psi(\varphi) = 0$, where $n^2 = \frac{L_z^2}{\hbar^2}$. Possible solutions have the form $\psi(\varphi) = A e^{\pm i n \varphi} $, subject to $\psi(\varphi) = \psi(\varphi + 2\pi)$. The periodic boundary condition fixes $e^{\pm i n \varphi} = e^{\pm i n(\varphi + 2\pi)}$ which admits the solution $1 = e^{\pm 2\pi i n}$, or, equivalently, $n = 0, \pm 1, \pm 2 \, \ldots \in \mathbb Z$. Thus $L_z^2 = \hbar^2n^2$ and $E_n = \frac{\hbar^2n^2}{2I} = \frac{\hbar^2 n^2}{2mR^2}$. Invoking the normalization condition for $\psi$ $\int_{-\infty}^{\infty} |\psi(\varphi)|^2 d\varphi = 1$ fixes $\psi_n = \frac{1}{\sqrt{2\pi}}e^{\pm i \varphi}$. More generally, $-\frac{\hbar}{2mR^2}\frac{\partial^2\psi}{\partial \varphi^2} + V(\varphi)\psi(\varphi) = E\psi(\varphi)$ can only be solved using WKB approximations.
+>
+> 
+> Time-evolution of the wavefunction is studied using the **Split-operator method**. Consider $i\hbar\frac{\partial}{\partial t}|\Psi\rangle = \[H_K + H_V\]|\Psi\rangle$; the Hamiltonian is separated into kinetic (momentum) and potential (position) terms, such that the unitary evolution operators are defined as follows $U_K(\delta t) = e^{-\frac{i}{\hbar}H_K\delta t}$ and $U_V(\delta t) = e^{-\frac{i}{\hbar}H_V\delta t}$. We cannot separate the evolution operator for the full Hamiltonian into two parts because we introduce terms proportional to the commutator $e^A e^B = e^{A+B+\frac{1}{2}\[A,B\]+O(A^2, B^2)}$ as per the Baker-Campbell-Hausdorff lemma. We can gain back an order of accuracy by symmetrizing our formula, calculating a time step by $U_V(\frac{\delta t}{2})U_K(\delta t)U_V(\frac{\delta t}{2})$. This is made easier in the Fourier domain, since momentum terms are Fourier transformed from derivatives to multiplicative terms.
+
+As with the [legacy Burgers' data efficiency study](https://github.com/anantshri1/fno-data-efficiency), this project runs in a Python virtual environment. `JAX` is installed in CPU-only mode for development (`jax[cpu]`). The dependency set is intentionally minimal:
+* `JAX` and `Equinox` cover the model and all numerical operations.
+* `Optax` covers optimization.
+* `MLflow` covers experiment tracking.
+* `Matplotlib` covers visualization.
+
+No higher-level neural operator libraries are used for the model itself; the entire DIFNO implementation is built from primitives. This is a deliberate choice for two reasons: 
+* it demonstrates implementation literacy, and
+* it gives full control over architectural details that matter for the ablation studies.
 
 ---
 ## Background and Setup
