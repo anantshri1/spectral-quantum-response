@@ -124,3 +124,41 @@ Two clean findings on the CORRECT net (f64-trained dino λ0 M16, seed0, N=200):
   - if it flips → mechanism right, measured wrong quantity (magnitude vs error)
   - if it also doesn't → off-band story FALSIFIED, liability is IN-BAND → different (still publishable) result
 - raw grid saved results/offband_grid.npz (26 ckpts, don't recompute)
+
+### [FALSIFIED] 7A off-band hallucination mechanism — liability is IN-BAND, not off-band
+- Table B, λ=0, 3-seed: M16 ‖e_in‖ 0.305 vs M12 0.133 (2.3×); ‖e_off‖ 0.041 vs 0.032 (≈equal)
+- ⇒ M16's λ=0 response penalty (0.262→0.587) lives INSIDE the response band, not hallucinated outside
+- Phase-4 sample-0 "off-band hallucination" does NOT generalize (26 ckpts, 3 seeds — well powered)
+- off-band MASS (2b) and off-band ERROR FRACTION (2c-A) both fail to carry the sign flip
+- Table A λ>0 "flip" = artifact of fraction denominator (in-band error changing), NOT mechanistic — do not use
+- SURVIVES: λ-collapse of off-band mass (0.140→0.094) as minor sub-result; DINO tidies off-band leak
+- REFRAMED (candidate, UNTESTED across λ): liability = unsupervised capacity corrupts IN-BAND coupling
+- [OPEN] need absolute in/off ERROR split across ALL λ (only ran λ=0) to test reframed mechanism +
+  whether in-band penalty flips to asset at λ>0 (mirroring the response-error sign flip)
+- artifacts: results/offband_errmass_grid.npz (has off_abs/in_abs for full grid ALREADY — see below)
+
+### [CONFIRMED] 7A mechanism — sign flip is IN-BAND (3-seed, non-overlapping)
+- Q1 DINO kills in-band error: M16 ‖e_in‖ 0.305→0.048→0.034→0.027 (λ 0→0.1→1→10), 6.4× collapse
+- Q2 in-band sign flip: (M16−M12) ‖e_in‖ = +0.172 (λ0, LIABILITY) → −0.019/−0.009/−0.005 (λ>0, ASSET)
+  → mirrors the Phase-6 response-error flip (0.262↔0.587), now LOCATED in-band
+- off-band is NOT it: (M16−M12) ‖e_off‖ = +0.009 at λ0, ~20× smaller than in-band → liability ~95% in-band
+- MECHANISM (measured): unsupervised extra capacity corrupts IN-BAND coupling; DINO repairs it in-band;
+  the flip lives inside the response band, not in hallucinated off-band coupling
+- CAVEAT (open): M12 vs M16 = separately trained nets. "M16 trains to worse in-band solution" is solid.
+  "modes 12–15 specifically cause it" needs truncate-at-inference (zero M16's modes 12-15, hold weights) — TODO
+- prior "off-band hallucination" mechanism FALSIFIED and removed; this replaces it
+- source: results/offband_errmass_grid.npz (in_abs/off_abs, full grid, cached — no recompute)
+
+### [CONFIRMED — final mechanism] 7A: in-band, low-mode, capacity/optimization — NOT off-band, NOT high-modes
+- 2e truncate-at-inference: zeroing M16 modes 12-15 does NOT reduce in-band err (0.300→0.324, slightly worse)
+  → liability is NOT modes 12-15; it's in the SHARED low modes (0-11)
+- gates: truncate-to-16 no-op 0.300==0.300; e_full 0.300 ≈ 2d's 0.305 ✓
+- CORRECTED mechanism: unsupervised excess capacity → optimizer finds WORSE low-mode in-band coupling
+  than the smaller model; DINO recovers it (in-band err 0.305→0.048 at λ0.1); flip = in-band, low-mode
+- "extra modes corrupt/hallucinate coupling" FULLY RETRACTED (off-band 2c + high-mode 2e both falsify)
+- open Q (→ manuscript limitations): WHY does capacity find worse in-band soln unsupervised?
+  (implicit-bias / under-constrained low modes when endpoint-only supervised) — beyond this testbed
+### [LESSON banked] mass vs error: |J| mass and J-error point opposite ways; normalized fractions hide
+  absolute damage (off-band FRACTION fell for the WORSE model). Always: absolute error, split by region, before ratios.
+### [PAPER] off-band = ruled-out alternative, not mechanism: "one high-k0 sample suggested off-band
+  hallucination; 200 samples/3 seeds → 95% in-band, falsified." Strengthens the real claim.

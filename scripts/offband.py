@@ -139,3 +139,131 @@ if __name__ == "__main__":
         overlap = abs(m16-m12) < (s12+s16)   # crude non-overlap check
         flag = "  ⚠overlap" if overlap else ""
         print(f"  {lam:<4}  {m12:.3f}({s12:.3f})   {m16:.3f}({s16:.3f})   {rel}{flag}")
+
+    # --- Block 2c: off-band ERROR mass (phase-aware) + abs in/off-band error split ---
+    # restrict the ERROR (Jfno - Jtrue), not |Jfno|, to off-band. Reuses bands + Jtrue cache.
+    OFFMASK = np.abs(OFFSET)                            # |d| grid, (nx,nx)
+
+    def err_split_for_ckpt(path, m):
+        model = load_fno_f64_ckpt(path, cfg, n_modes=m)
+        off_frac = np.empty(N)      # ‖err_offband‖ / ‖err‖   (normalized, candidate-1 metric)
+        off_abs  = np.empty(N)      # ‖err_offband‖           (absolute)
+        in_abs   = np.empty(N)      # ‖err_inband‖            (absolute)
+        for s in range(N):
+            Jf  = mode_coupling_matrix(jacobian_fno(model, psi0[s], V[s]))
+            err = np.abs(Jf - Jtrue[s])                # phase-aware error magnitude per entry
+            outside = np.abs(OFFSET - int(k0_all[s])) > bands[s]
+            e_off = np.linalg.norm(err[outside])
+            e_in  = np.linalg.norm(err[~outside])
+            e_tot = np.linalg.norm(err)
+            off_frac[s] = e_off / e_tot
+            off_abs[s]  = e_off
+            in_abs[s]   = e_in
+        return off_frac, off_abs, in_abs
+
+    seeds = [0, 1, 2]; lam_3seed = [0.0, 0.1, 1.0, 10.0]
+    def ckpt_path(seed, m, lam):
+        return f"checkpoints/dino_N2000_seed{seed}_M{m}_lam{lam}_final.eqx"
+
+    res_frac, res_ioff, res_iin = {}, {}, {}
+    import time; t0 = time.time()
+    jobs = [(s,m,l) for m in [12,16] for l in lam_3seed for s in seeds]
+    for i,(seed,m,lam) in enumerate(jobs):
+        p = ckpt_path(seed,m,lam)
+        if not os.path.exists(p):
+            print(f"  [{i+1}/{len(jobs)}] SKIP {p}"); continue
+        of, oa, ia = err_split_for_ckpt(p, m)
+        res_frac[(seed,m,lam)] = float(of.mean())
+        res_ioff[(seed,m,lam)] = float(oa.mean())
+        res_iin[(seed,m,lam)]  = float(ia.mean())
+        np.savez("results/offband_errmass_grid.npz",
+                 keys=np.array(list(res_frac.keys())),
+                 off_frac=np.array(list(res_frac.values())),
+                 off_abs=np.array(list(res_ioff.values())),
+                 in_abs=np.array(list(res_iin.values())))
+        print(f"  [{i+1}/{len(jobs)}] s{seed} M{m} λ{lam}: "
+              f"off-err-frac {of.mean():.3f}  |  ‖e_off‖ {oa.mean():.3f}  ‖e_in‖ {ia.mean():.3f}"
+              f"  ({time.time()-t0:.0f}s)")
+
+    # --- the two diagnostic tables ---
+    print("\n[2c-A] OFF-BAND ERROR FRACTION — 3-seed mean (spread), M12 vs M16:")
+    print("  λ     M12            M16            M16 vs M12")
+    for lam in lam_3seed:
+        v12=[res_frac[(s,12,lam)] for s in seeds if (s,12,lam) in res_frac]
+        v16=[res_frac[(s,16,lam)] for s in seeds if (s,16,lam) in res_frac]
+        if not(v12 and v16): continue
+        m12,s12=np.mean(v12),np.std(v12); m16,s16=np.mean(v16),np.std(v16)
+        ovl="  ⚠overlap" if abs(m16-m12)<(s12+s16) else ""
+        print(f"  {lam:<4}  {m12:.3f}({s12:.3f})   {m16:.3f}({s16:.3f})   "
+              f"{'M16>M12' if m16>m12 else 'M16<M12'}{ovl}")
+
+    print("\n[2c-B] ABSOLUTE ERROR SPLIT at λ=0 (the sign-flip origin): where is M16's extra error?")
+    for m in [12,16]:
+        oa=[res_ioff[(s,m,0.0)] for s in seeds if (s,m,0.0) in res_ioff]
+        ia=[res_iin[(s,m,0.0)]  for s in seeds if (s,m,0.0) in res_iin]
+        print(f"  M{m}:  ‖e_off‖ {np.mean(oa):.3f}   ‖e_in‖ {np.mean(ia):.3f}")
+    print("  → if M16 ‖e_in‖ ≫ M12 ‖e_in‖ but ‖e_off‖ ≈ equal → liability is IN-BAND (off-band story falsified)")
+    print("  → if M16 ‖e_off‖ ≫ M12 ‖e_off‖ → liability is off-band (mechanism holds, mass was wrong metric)")
+
+    # --- Block 2d: in/off absolute ERROR across λ (re-tabulate cached grid, NO recompute) ---
+    d = np.load("results/offband_errmass_grid.npz")
+    keys = d["keys"]                                  # (n,3) rows of (seed, M, lam)
+    off_abs = d["off_abs"]; in_abs = d["in_abs"]
+
+    # index back into the flat arrays by (seed,M,lam)
+    lut = {(int(k[0]), int(k[1]), float(k[2])): i for i, k in enumerate(keys)}
+    seeds = [0,1,2]; lam_3seed = [0.0, 0.1, 1.0, 10.0]
+
+    def mean_spread(m, lam, arr):
+        vals = [arr[lut[(s,m,lam)]] for s in seeds if (s,m,lam) in lut]
+        return (np.mean(vals), np.std(vals)) if vals else (np.nan, np.nan)
+
+    print("[2d] ABSOLUTE IN-BAND error ‖e_in‖ — 3-seed mean(spread):")
+    print("  λ      M12            M16            M16-M12")
+    for lam in lam_3seed:
+        m12,s12 = mean_spread(12,lam,in_abs); m16,s16 = mean_spread(16,lam,in_abs)
+        ovl = "  ⚠ovl" if abs(m16-m12)<(s12+s16) else ""
+        print(f"  {lam:<5}  {m12:.3f}({s12:.3f})   {m16:.3f}({s16:.3f})   {m16-m12:+.3f}{ovl}")
+
+    print("\n[2d] ABSOLUTE OFF-BAND error ‖e_off‖ — 3-seed mean(spread):")
+    print("  λ      M12            M16            M16-M12")
+    for lam in lam_3seed:
+        m12,s12 = mean_spread(12,lam,off_abs); m16,s16 = mean_spread(16,lam,off_abs)
+        ovl = "  ⚠ovl" if abs(m16-m12)<(s12+s16) else ""
+        print(f"  {lam:<5}  {m12:.3f}({s12:.3f})   {m16:.3f}({s16:.3f})   {m16-m12:+.3f}{ovl}")
+
+    # the two questions, answered directly:
+    print("\n[2d] READ:")
+    print("  Q1 does DINO kill IN-BAND error for M16?  ‖e_in‖ M16 across λ:")
+    print("     " + "  ".join(f"λ{l}:{mean_spread(16,l,in_abs)[0]:.3f}" for l in lam_3seed))
+    print("  Q2 does the M16 IN-BAND penalty flip sign?  (M16-M12) ‖e_in‖ across λ:")
+    print("     " + "  ".join(f"λ{l}:{mean_spread(16,l,in_abs)[0]-mean_spread(12,l,in_abs)[0]:+.3f}"
+                              for l in lam_3seed))
+
+    # --- Block 2e: truncate-at-inference — is the in-band liability LITERALLY modes 12-15? ---
+    from scripts.sweep_truncate import truncate_model     # <-- confirm import + signature
+
+    P_M16_L0 = "checkpoints/dino_N2000_seed0_M16_lam0.0_final.eqx"
+    model_full = load_fno_f64_ckpt(P_M16_L0, cfg, n_modes=16)
+    model_trunc = truncate_model(model_full, 12)          # zero modes 12..15, weights else frozen
+
+    def inband_err(model):
+        e = np.empty(N)
+        for s in range(N):
+            Jf = mode_coupling_matrix(jacobian_fno(model, psi0[s], V[s]))
+            err = np.abs(Jf - Jtrue[s])
+            inside = np.abs(OFFSET - int(k0_all[s])) <= bands[s]
+            e[s] = np.linalg.norm(err[inside])
+        return e.mean()
+
+    e_full  = inband_err(model_full)
+    e_trunc = inband_err(model_trunc)
+    print(f"[2e] M16λ0 in-band err:  full {e_full:.3f}  |  modes12-15 zeroed {e_trunc:.3f}")
+    print(f"     M12λ0 (separately trained, ref) = 0.133")
+    print(f"     → drop toward 0.133 ⇒ modes 12-15 actively harm in-band ('corrupt' airtight)")
+    print(f"     → no drop ⇒ in-band error is in shared low modes, not the extra modes")
+
+    # identity gate: truncating to 16 must be a no-op (reproduces full)
+    m16_noop = truncate_model(model_full, 16)
+    e_noop = inband_err(m16_noop)
+    print(f"[2e-gate] truncate-to-16 no-op: {e_noop:.3f} vs full {e_full:.3f}  (must match)")
