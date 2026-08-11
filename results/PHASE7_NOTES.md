@@ -162,3 +162,7 @@ Two clean findings on the CORRECT net (f64-trained dino λ0 M16, seed0, N=200):
   absolute damage (off-band FRACTION fell for the WORSE model). Always: absolute error, split by region, before ratios.
 ### [PAPER] off-band = ruled-out alternative, not mechanism: "one high-k0 sample suggested off-band
   hallucination; 200 samples/3 seeds → 95% in-band, falsified." Strengthens the real claim.
+  
+  Forward-only training leaves the response operator under-determined: the endpoint loss admits many forward-equivalent solutions with differing Jacobians, and the optimizer's seed selects among them. The signature is a decoupling — at λ=0, M=12 forward error is seed-pinned (spread 9×10⁻⁴) while its response error scatters ~25× more (spread 0.023). A derivative term breaks the degeneracy: any λ≥0.1 collapses the response spread to ≤0.004 at both M=12 and M=16. This is the variance axis, and it is fully owned by supervision.
+
+Separately, capacity displaces the mean: M=16 forward-only reaches a worse response (0.587 vs 0.262) than M=12. Notably this is not variance inflation — M=16's seed-spread (0.017) is tighter than M=12's (0.023). More modes land more consistently on a worse linearization. Why the larger model's implicit bias favors a worse in-band coupling is not resolved by this testbed and remains a limitation.
