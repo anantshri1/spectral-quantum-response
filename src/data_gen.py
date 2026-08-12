@@ -124,6 +124,24 @@ def realize_wavepacket(x0, sigma, k0, nx, n_images=2):
     carrier = jnp.exp(1j * k0 * phi)                           # plane-wave momentum
     return (envelope * carrier).astype(jnp.complex128)         # (nx,) complex
 
+def ood_potential(coeffs, V_indist, nx, ls, ls0=0.20):
+    """
+    OOD potential at roughness `ls` from an in-dist generating spectrum.
+
+    Reweight the SAME stored spectrum (fixed random draw) from ls0 to ls —
+    only the exp(-k·ls) envelope moves — then renorm (convention B) to the
+    sample's in-dist L2 norm ‖V_indist‖. At ls=ls0 the reweight factor is
+    exp(0)=1, so this returns V_indist bit-for-bit (gated: G1b, 0.00e+00).
+
+    coeffs: (n_coeffs,) c128, the sample's p_coeffs (ls0 spectrum).
+    V_indist: (nx,) f64, the sample's realized in-dist V (V_128).
+    """
+    import jax.numpy as jnp
+    k = jnp.arange(coeffs.shape[0])
+    c = coeffs * jnp.exp(-k * (ls - ls0))
+    V = realize_potential(c, nx)
+    return V * (jnp.linalg.norm(V_indist) / jnp.linalg.norm(V))
+
 """
 # Diagnostic runs
 
