@@ -503,7 +503,57 @@ Unsupervised excess spectral capacity causes the FNO to converge to a worse low-
 * Checkpoint provenance is a first-class bug category. Two different loaders exist for a reason (`load_fno_x64` for `f32-origin-cast-to-f64`, `load_fno_f64_ckpt` for genuinely f64-trained weights) — silently using the wrong one produces a plausible-looking but wrong number (0.5113 vs the correct 0.5787/0.587), and the discrepancy can masquerade as a seed-variance or renormalization-convention issue before the real cause (training precision, not eval precision) is found.
 
 ---
-## Seed Insurance
+## Seed Insurance and Mechanism Decomposition
+Forward-only training leaves the response operator under-determined. The endpoint loss defines an equivalence class of models: every FNO that fits `ψ_T` to the accuracy floor is "correct" as far as forward supervision can tell. But the response `∂ψ_T/∂V` is not an invariant of that class — two models can match `ψ_T` on the training manifold and still have very different Jacobians. So the optimizer's random path (the seed) selects which member of the class you land on, and there is no force pulling that member toward the true Jacobian.
+
+This splits the capacity effect into two orthogonal axes:
+* Variance (spread across seeds) = the size of the equivalence class. More modes → larger class → more room for seeds to disagree in Jacobian space. DINO's derivative term is a second constraint layered on the endpoint constraint: it carves the class down to the thin sliver of members whose Jacobian also matches. A sliver is small, so wherever a seed lands inside it, they all land close together. This is the axis DINO owns, and it is confirmed.
+* Bias (the mean, which grows with capacity) = where the class sits, independent of its width. Even with zero seed variance — even if every seed landed on the exact same member — that member could still be a bad linearization. Why forward-training's implicit bias selects a worse-Jacobian member as capacity grows is a statement about the location of the class, not its size, and it is not resolved by this testbed. 
+
+DINO constrains your optimization to a submanifold of the equivalence class; it cannot help if the class was centered on the wrong place to begin with — it constrains, it doesn't make fresh. DINO does improve the mean dramatically when it is switched on (`λ=10` pulls `M16`'s response error `0.573 → 0.057`); **"DINO can't fix the bias"** means it cannot explain why the unsupervised `λ=0` class was mis-centered by capacity — not that it fails to lower the mean.
+
+#### Math background 
+* Under-determination formally: the endpoint loss defines a sublevel set (the equivalence class) in weight space; the response map is a function on weight space that is not constant on that sublevel set. Forward-only SGD/Adam converges to a point in the sublevel set chosen by initialization + optimizer dynamics (implicit bias). DINO adds a term whose sublevel set intersects the endpoint one in a much smaller set → less freedom → less seed variance.
+* Why the response error needs no phase alignment: both `J_fno` and `J_true` differentiate the same-phase forward map (the FNO is trained to match the solver's `ψ_T` convention). A derivative inherits its function's phase frame; no new global U(1) freedom is introduced, so `‖J_fno − J_true‖_F` is meaningful directly. 
+* Split-step solver is unconditionally unitary — each step is a product of phase multiplies (V half-kick × kinetic × V half-kick), each exactly norm-preserving. `‖ψ_T‖ = ‖ψ₀‖` to machine precision for any V_max, any dt. What large `V_max·dt` costs is Strang's `O(dt²)` splitting error (drift from true continuous QM), not norm loss or instability. 
+
+### Results — the 4-seed grid (all f64)
+
+Seed 3 was trained fresh (`train_dino.py, --warmup 50`) at `M∈{12,16} × λ∈{0,10}`, then all four seeds were run through one identical eval loop against the frozen `Jtrue_kq_200.npy` cache. Response error is the relative Frobenius norm `‖J_fno − J_true‖_F / ‖J_true‖_F`, averaged over the 200-sample test set.
+
+### `λ = 10` — the capacity sign-flip (the tightest pair in the study):
+
+|seed|	M12|	M16|
+|-|-|-|
+|0|	0.0678|	0.0568|
+|1	|0.0664	|0.0585|
+|2|	0.0657|	0.0548|
+|3|	0.0694|	0.0582|
+|mean ± std|	0.0673 ± 0.0017	|0.0571 ± 0.0017|
+|range|	[0.0657, 0.0694]	|[0.0548, 0.0585]|
+
+**What it means:** under strong derivative supervision, the ordering reverses — the higher-capacity `M16` now beats `M12`. The extra spectral modes 12–15 that were unconstrained liabilities at `λ=0` become steered assets once the loss can see the Jacobian: the derivative term gives that extra expressivity somewhere useful to go. Both distributions are razor-tight (`std 0.0017`), and the highest `M16` (`0.0585`) sits below the lowest `M12` (`0.0657`) — a gap of `0.0072`, roughly 4σ. Every individual seed flips: this is the tightest comparison in the whole project and it is still cleanly disjoint, so the flip is a real property of the training objective, not seed noise.
+
+
+#### `λ = 0` — the capacity-bias mean (forward-only):
+
+|seed|	M12|	M16|
+|-|-|-|
+|0|	0.2455|	0.5787|
+|1|	0.2951|	0.5957|
+|2|	0.2458	|0.5876|
+|3|	0.2406|	0.5307|
+|mean ± std|	0.2568 ± 0.0257|	0.5732 ± 0.0291|
+|range|	[0.2406, 0.2951]|	[0.5307, 0.5957]|
+
+**What it means:** unsupervised, the more expressive model reaches a worse response (`M16 ≈ 2.2× M12`) despite fitting the forward map better. The two ranges are disjoint by `0.236` — about 8σ.
+
+**Variance collapse:** seed-std goes from `~0.026–0.029` at `λ=0` to `~0.0017` at `λ=10 `— a ~16× collapse, at both capacities. This is the single strongest piece of mechanism evidence: it is exactly what "DINO carves the under-determined class down to a sliver" predicts, and it now holds with a larger sample and a cleaner number.
+
+> **Decoupling bonus**: seed 3 happened to fit the forward map slightly worse than seeds 0–2 (`M16 λ=0 forward rel-L2 0.0200` vs family `0.0187`; `M12 0.0217 vs 0.0203–0.0212`). Its response nonetheless landed squarely in the capacity-bias regime. Forward quality and response quality are decoupled — a marginally worse value fit did not drag the derivative out of band — confirming the core decoupling one more time.
+
+
+
 ---
 
 ## Performance on OOD potentials
