@@ -630,6 +630,8 @@ For the forward-only model: forward rel-L2 stays inside a conventionally "accept
 ## Scope cuts 
 * Norm-violation penalty as an active loss term — logged as a passive diagnostic throughout (and it improves under DINO as a side effect), but never tested as its own supervised arm. Would need to be a separate ablation to avoid confounding attribution with the derivative-matching term.
 * Warmup necessity — used throughout (50 epochs, held fixed across the λ sweep) as a stability precaution; never ablated against warmup-off, since nothing diverged at any tested λ and there was no empirical pressure to isolate it.
+* Burgers cross-check — dropped in favor of OOD as the stronger second leg; state-to-state vs parameter-to-state confound would need its own solver-differentiability gate and was judged not worth the risk.
+* The capacity-bias mean "why": which member does forward-training's implicit bias select at higher capacity, and why is it worse in Jacobian? Testing it properly needs loss-landscape curvature in Jacobian-active directions, or trajectory-divergence diagnostics (which are ill-defined for an endpoint map that produces no trajectory).
 
 ---
 ## References
