@@ -98,3 +98,18 @@ Response ordering lambda=10 < lambda=0.1 < lambda=0 at EVERY ls, no inversions.
 0.511   f32 M16 200-sample response ; 48.9% recovered (f32)
 k0 M-shape (0.489 / 0.592 / 0.540 / 0.505 / 0.428) — f32, parked, mechanism not chased
 truncate-at-inference table (1.037 -> 0.511) — f32
+
+================================================================
+9. Response vs N (Sweep)
+================================================================
+N       response (mean ± std)     forward (~)
+250     1.140 ± 0.023             0.106
+500     1.000 ± 0.021             ~0.05
+1000    0.824 ± 0.012             ~0.03
+2000    0.587 ± 0.009             0.019
+At the same 2000 samples, forward-only reaches response 0.587 and hasn't converged; DINO reaches 0.103 (λ=0.1) or 0.057 (λ=10). 
+So this curve becomes the baseline that quantifies DINO's data-efficiency: derivative supervision buys ~5.7–10× lower 
+response error at matched data, and forward-only would need far more data — an extrapolation of the observed trend 
+puts reaching DINO's λ=0.1 level somewhere around 10⁴–10⁵ samples, but I'd only cite the measured 5.7× at N=2000 and 
+call the rest illustrative, because we can't pin the asymptote. Reframed claim: you can buy response fidelity with forward data, 
+but at a data cost so large that supervision is dramatically cheaper.
