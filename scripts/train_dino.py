@@ -101,7 +101,7 @@ def train_step_dino(model, psi0_b, V_b, uT_b, v_b, Jv_true_b,
     model = eqx.apply_updates(model, updates)
     return model, opt_state, loss, fwd, dino
 
-def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None):
+def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None, n_train=None):
     if seed is not None:
         cfg.seed = seed
     if n_modes is not None:
@@ -126,6 +126,15 @@ def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None):
     assert jnp.allclose(v_all.shape[0], V_tr.shape[0]), "row count mismatch"
     assert float(jnp.max(jnp.abs(jnp.asarray(pc["V"]) - V_tr))) < 1e-12, \
         "precompute V != load_split V — row alignment broken, STOP"
+
+    # --- N-subset for the response-vs-N sweep (additive; None => full 2000) ---
+    # Contiguous prefix keeps the precompute alignment for free: pc["V"] == V_tr
+    # row-for-row (gated just above), so [:n_train] on BOTH the data and the
+    # references stays aligned. Nested across N, matches train.py's convention.
+    # Slicing AFTER the gate means the byte-for-byte check still runs on full 2000.
+    if n_train is not None:
+        psi0_tr, V_tr, uT_tr = psi0_tr[:n_train], V_tr[:n_train], uT_tr[:n_train]
+        v_all,   Jv_all      = v_all[:n_train],   Jv_all[:n_train]
 
     n_actual = psi0_tr.shape[0]
     print(f"[dino] N={n_actual} seed={cfg.seed} M={cfg.n_modes} "
@@ -223,7 +232,8 @@ if __name__ == "__main__":
     p.add_argument("--warmup",      type=int,   default=0, dest="warmup_epochs")
     p.add_argument("--seed",        type=int,   default=None)
     p.add_argument("--n_modes",     type=int,   default=None)
+    p.add_argument("--n_train", type=int, default=None)
     args = p.parse_args()
     train_dino(Config(), dino_lambda=args.dino_lambda,
                warmup_epochs=args.warmup_epochs, seed=args.seed,
-               n_modes=args.n_modes)
+               n_modes=args.n_modes, n_train=args.n_train)
