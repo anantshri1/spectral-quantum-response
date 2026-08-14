@@ -1,0 +1,100 @@
+CANONICAL NUMBERS — spectral-quantum-response
+Ground truth. Any figure elsewhere in the narrative that disagrees is superseded by this file.
+Source: README @ afa2c6d.  Set: 2026-08-14.
+ 
+================================================================
+0. PRECISION REGIMES  (read this first — numbers are NOT comparable across regimes)
+================================================================
+Two regimes exist. Mixing them is the #1 source of apparent "instability":
+ 
+  f32 : original forward training only.
+        Canonical forward checkpoint = checkpoints/fno_N2000_seed0_final.eqx.
+  f64 : EVERYTHING response-related — J_true, J_fno, DINO, capacity, Born, OOD.
+        x64 is enabled globally (the response JVP machinery requires it), which
+        promotes the FNO forward pass too. This is deliberate, not a leak.
+ 
+RULE: every response number is f64. The f32-era response figures
+      (0.386, 0.511, 48.9% recovered) are HISTORICAL and SUPERSEDED — they
+      survive in the narrative only to tell the precision-sensitivity story
+      (a 0.002 forward shift moved response by 0.068).
+ 
+================================================================
+1. FORWARD ACCURACY
+================================================================
+f32 canonical checkpoint (M16, seed0)      forward rel-L2 = 0.0169   ["good surrogate"]
+  norm-violation (byproduct, never in loss)              = 0.0057
+f64 forward-only floor (M16, lambda=0)     forward rel-L2 ~ 0.0187   (seeds 0-2; seed3 = 0.0200)
+ 
+================================================================
+2. RESPONSE — FORWARD-ONLY (lambda=0), f64, 4-SEED GRID   [CANONICAL]
+================================================================
+M16 lambda=0   0.573 +/- 0.029   range [0.531, 0.596]   (seed0 = 0.5787)
+M12 lambda=0   0.257 +/- 0.026   range [0.241, 0.295]
+Capacity bias : M16 ~ 2.2x M12, ranges DISJOINT by 0.236  (~8 sigma)
+ 
+  [DECISION #1 — pick one headline for the forward-only floor and use it everywhere:
+     0.573  = 4-seed mean (most recent, tightest provenance)  <-- recommended
+     0.587  = 3-seed mean (this is the number the Born tie was computed against)
+     0.5787 = seed0 single (use ONLY for single-sample prose)
+   In prose "~0.58" covers all three; tables use the tagged precise value.]
+ 
+================================================================
+3. RESPONSE — SIGN FLIP (lambda=10), f64, 4-SEED GRID   [CANONICAL]
+================================================================
+M12 lambda=10  0.0673 +/- 0.0017  range [0.0657, 0.0694]
+M16 lambda=10  0.0571 +/- 0.0017  range [0.0548, 0.0585]
+Flip : M16 < M12, gap 0.0072 (~4 sigma), EVERY individual seed flips.
+Variance collapse lambda=0 -> lambda=10 : std 0.026-0.029 -> 0.0017  (~16x)
+ 
+================================================================
+4. RESPONSE — DINO lambda SWEEP (M16), f64
+================================================================
+lambda    forward    response   recovered
+0         0.0187     0.573      41.3%      [4-seed, canonical]
+0.1       0.0168     0.103      89.7%      [PROVISIONAL — fewer seeds than 0 / 10]
+1         0.0144     0.073      92.8%      [PROVISIONAL — fewer seeds]
+10        0.0136     0.0571     94.3%      [4-seed, canonical]
+No Pareto tradeoff: forward IMPROVES monotonically with lambda, never degrades.
+"% recovered" := 1 - err  (linear rescale of relative Frobenius error;
+                            NOT variance-explained — label once as a definition.)
+ 
+  [DECISION #2 — lambda=0.1 and lambda=1 are lower seed-count than the endpoints.
+   Either (a) mark them provisional in the paper, or (b) backfill to 4 seeds.
+   Not more lambda points (Fable's "do not add") — just seed parity. Low priority.]
+ 
+================================================================
+5. BORN BASELINE, f64, 200 SAMPLES   [CANONICAL]
+================================================================
+Born mean response error   0.651   (std 0.299, median 0.602, range [0.108, 1.534])
+FNO forward-only floor      ~0.58   -> STATISTICAL TIE with Born
+Per-sample decorrelation    Pearson r = 0.107 (p=0.13), Spearman rho = 0.097 (p=0.17)
+Flatness (median split)     Born +0.463 (0.419 -> 0.882) ; FNO +0.016 (0.571 -> 0.586) -> 29x flatter
+On perturbative half        FNO (0.571) WORSE than Born (0.419)
+                            -> kills "FNO = perturbation theory + corrections"
+ 
+================================================================
+6. MECHANISM — off-band hypothesis FALSIFIED, f64, 3-seed   [CANONICAL]
+================================================================
+lambda=0 error split      in-band     off-band
+  M12                     0.133       0.032
+  M16                     0.305       0.041
+M16 excess over M12 : +0.172 in-band vs +0.009 off-band -> 19x -> liability ~95% IN-BAND
+Isolation : zero M16 modes 12-15 at inference -> in-band 0.300 -> 0.324 (flat/worse)
+            -> liability lives in SHARED low modes 0-11, not the extra modes themselves
+DINO repair : M16 in-band 0.305 -> 0.048 (6.4x) between lambda=0 and lambda=0.1
+ 
+================================================================
+7. OOD — renorm arm, ls sweep 0.30 -> 0.05, f64, seeds {0,1,2} x lambda {0,0.1,10}   [CANONICAL]
+================================================================
+Forward-only forward rel-L2 : 0.016 -> 0.066  (rises 4x), stays <= 7% ("acceptable")
+Forward-only response error : 0.577 -> 0.592  (+2.7%), sits ~58-60% throughout
+  -> forward accuracy is an ACTIVELY MISLEADING OOD monitor
+Response ordering lambda=10 < lambda=0.1 < lambda=0 at EVERY ls, no inversions.
+ 
+================================================================
+8. HISTORICAL / SUPERSEDED  (do not cite as current)
+================================================================
+0.386   single-sample seed0 f32 response
+0.511   f32 M16 200-sample response ; 48.9% recovered (f32)
+k0 M-shape (0.489 / 0.592 / 0.540 / 0.505 / 0.428) — f32, parked, mechanism not chased
+truncate-at-inference table (1.037 -> 0.511) — f32
