@@ -557,6 +557,74 @@ Seed 3 was trained fresh (`train_dino.py, --warmup 50`) at `M∈{12,16} × λ∈
 ---
 
 ## Performance on OOD potentials
+We previously establish that a forward-accurate FNO is systematically wrong about its own response operator `∂ψ_T/∂V`; capacity amplifies the error; DINO (derivative supervision) fixes it. We now ask whether this holds — and whether it's worse than it looks — when the potential `V` is pushed out of the training distribution. The result is **forward accuracy is not just uninformative about response trustworthiness OOD, it is actively misleading**.
+
+### The OOD knob and why it works
+
+The potential generator (`src/data_gen.py`) builds `V` from a random Fourier spectrum shaped by an envelope `exp(-k·ls)`, where `ls = v_length_scale`. Smaller `ls → slower envelope decay → more high-k content → rougher V`. Training used `ls=0.20`; we swept `ls ∈ {0.05, 0.10, 0.15, 0.20, 0.25, 0.30}`, holding `ψ₀` fixed to the frozen test set and moving only V.
+
+Key infrastructure fact that made everything downstream tractable: the test set stores not just the realized V (`V_128`) but the generating Fourier spectrum (`p_coeffs, shape (200,64) complex`). This meant we didn't need to redraw random V's per `ls` — we could reweight the exact same stored spectrum by a new envelope: `c_k(ls) = p_coeffs_k · exp(-k·(ls−0.20))`. At `ls=0.20` the reweight factor is `exp(0)=1`, so the reweighted V is bit-identical to the original in-distribution V. 
+
+### The confound, and why we renormalized
+
+At fixed spectral amplitude, lower `ls` makes `V` both rougher and higher-energy (roughness and strength are coupled in the raw generator). Left alone, a "rougher V" sweep would also secretly be a "stronger V" sweep, muddying whether any observed degradation is about spectral texture or about perturbation strength. We used two arms:
+* Renorm (primary, what we ran): rescale each OOD V by a single per-sample scalar so its L2 energy matches that sample's own in-distribution V. This isolates roughness as a pure spectral shift at fixed energy.
+* Natural (secondary, not run): leave amplitude fixed, let roughness and strength move together. Parked as a "realistic OOD" cross-check; not needed for the current thesis.
+
+**Renorm convention chosen**: per-sample, not population-mean. Each `V(ls,i)` is scaled to that sample's own in-distribution norm `‖V_indist[i]‖`, not to a population average. Because the reweighting at `ls=0.20` already reproduces `V_128` exactly, and per-sample renorm scales it to its own norm (`=itself`), the l`s=0.20` anchor is bit-identical to the original in-distribution `V`. That bit-identity is what let us legally reuse the existing frozen `J_true` cache (`Jtrue_kq_200.npy`) at the anchor point instead of recomputing it — saving one of six expensive autodiff batches — while still being honest, because the object being reused is provably the same physical quantity.
+
+> Math note on why a global rescale doesn't change the high-k energy fraction: renorm multiplies every Fourier coefficient by the same scalar s, so every `|c_k|²` scales by `s²`. In a ratio like `Σ_{k≥16}|c_k|² / Σ_all|c_k|²`, the `s²` is common to numerator and denominator and cancels exactly. This is why we could compute "how much high-k content did we add" on the pre-renorm coefficients and trust it as invariant — renorm changes the amount of energy, never its spectral shape. Same cancellation logic later explains why response error (a relative Frobenius norm) is insensitive to the ~1000× swing in the raw Jacobian magnitude across the `ls` sweep (rougher V → much larger typical Jacobian entries; renorm holds energy, not entry-scale).
+
+## Provenance discipline (or, why so many small validation scripts)
+
+Every new artifact in this phase was gated against an independent truth before being trusted for downstream use:
+
+* `ood_gate.py`: V-pipeline provenance, renorm sanity, high-k monotonicity — all passed cleanly, high-k fraction `0.0114→0.0025→0.0005` across `ls={0.15,0.20,0.25}`, a clean ~4.6×/step decay matching the `exp(-k·ls)` envelope prediction.
+* appended to `ood_gate.py`: solver finiteness + unitarity on OOD V (norm drift `1.9e-13`) and `J_true` finiteness + Born band-centering (peak coupling exactly at `k−q=k0`).
+* `ood_build_jtrue.py`: each fresh `ls`'s `J_true` was validated against an independent finite-difference check (`fd_check`) before being saved — all six `ls` landed at `~1.3–1.9e-6`, flat across the sweep (importantly: no blow-up at rough `ls`, meaning the Strang solver stayed accurate even at the roughest OOD point, because renorm kept `V_max·dt ≪ 1` everywhere — this strengthens the later claim that any response failure is FNO failure, not solver failure).
+* `ood_sweep.py`: a single gate cell (`seed0, M16, λ=0, ls=0.20`) was required to reproduce the frozen floor (`mean 0.5787, per-sample match 9.9e-9`) before trusting any of the other 53 cells.
+* `ood_forward.py`: sanity-checked that `seed0/λ0/ls=0.20` forward error reproduces the known small in-distribution forward floor (`~0.0187`) before trusting the OOD forward numbers.
+
+## Key Design Decisions
+
+* renorm reference = own-population in-distribution norm, per-sample (not population mean); envelope reweighting at fixed random key (not fresh draws).
+* full `ls` grid = `{0.30, 0.25, 0.20, 0.15, 0.10, 0.05}` (six points, denser than the original five-point pre-registration).
+* `models = seeds {0,1,2} × λ {0.0, 0.1, 10.0}`.
+* `J_true` cached per-`ls` only (model- and seed-independent — it only depends on `ψ₀`, `V`, and physics), built once and reused across all 9 models at that `ls`. This is the main compute-saving design of the phase.
+* `ψ₀` stored-as-is convention.
+* reuse the `ls=0.20` cache rather than recompute it fresh (saves one autodiff batch; legitimate because of the bit-identity proven by renorm convention).
+* built a separate forward-error sweep — the response grid alone couldn't support the "forward is a misleading monitor" claim; needed the actual forward rel-L2 curve alongside it.
+* representative sample chosen as the one nearest the median `λ=0` response error at each `ls`.
+* perturbation direction `δV = a fixed random unit vector` (generic, not adversarially chosen); ε chosen from an explicit finite-difference "valley" scan rather than guessed.
+
+### Results
+
+* **Original pre-registration**: "response error rises faster than forward error toward rough OOD." The 3-seed data inverted this rate ordering: for the forward-only model, forward rel-L2 rises 4× (0.016→0.066 as ls goes 0.30→0.05) while response error is nearly flat and already saturated (0.577→0.592, only +2.7%). This was recorded as an explicit amendment rather than silently edited. Crucially, the inversion doesn't weaken the thesis — it sharpens it (see P3).
+
+At every `ls` and every seed, response error orders as `λ=10 < λ=0.1 < λ=0`, with no inversions — DINO's response advantage survives the entire OOD sweep, compressing only slightly at the roughest point. Confirmed for forward accuracy too: `λ=10`'s forward curve is both lower and flatter than `λ=0`'s across all `ls`.
+  
+For the forward-only model: forward rel-L2 stays inside a conventionally "acceptable" band (`≤7%`) across the entire OOD sweep, while response error sits at `~58–60%` throughout — catastrophic, and already present in-distribution. A practitioner monitoring forward accuracy alone would see graceful, modest degradation and correctly infer nothing is obviously broken — while the response operator (what you'd need for control, inverse design, or sensitivity analysis) has been wrong the whole time. Contrast: the DINO model's forward and response curves degrade together, proportionally — for DINO, forward error is an honest monitor. 
+
+<p align="center">
+  <img alt="image" src="https://github.com/user-attachments/assets/262dedf7-8cb7-4f30-82b8-a03fe7d2f22c">
+</p>
+
+* Linearized-prediction demo: At a representative OOD sample, comparing the true nonlinear response `ψ_T(V+εδV) − ψ_T(V)` against the first-order prediction `ε·J·δV` for the three Jacobians: `J_true` is an essentially exact predictor (linearization error `~5e-10 to ~1e-10`, confirming the map is locally benign to linearize — this was independently verified via a finite-difference valley scan before trusting any comparison, so any later divergence is guaranteed to be model error and not just nonlinearity or numerical noise). `λ=10`'s error is small (`~2.4–2.8e-6`) and `λ=0`'s is roughly an order of magnitude worse than `λ=10`'s and `~5` orders worse than truth (`~2.8–3.3e-5`). The spatial residual panels (prediction minus truth) show something mechanistically informative: `λ=0`'s error isn't a smooth offset, it's high-frequency spatial noise — consistent with the Jacobian mis-coupling modes rather than making a simple systematic error. `λ=10`'s residual hugs zero and is smooth.
+
+<p align="center">
+  <img alt="image" src="https://github.com/user-attachments/assets/d642f70a-07f2-4abe-b356-5c5b18e356a5">
+</p>
+
+
+* Jacobian hue maps: Plotting `|J(k,q)|` directly as a 2D heatmap (`k=output mode, q=input mode, fftshifted` so `k=0` is centered, with the Born-predicted coupling band `k−q=k0` marked as a diagonal cyan line) `J_true` shows a compact bright blob hugging the band, exactly as Born theory predicts. `λ=0` (forward-only) shows the same central blob plus visible extra smeared structure around it — spurious coupling the true operator doesn't have. `λ=10` (DINO) looks essentially like `J_true` again — clean, compact, on-band. The error maps `|model − true|` make it unambiguous: `λ=0`'s error lights up along the Born band itself (in-band error, consistent with the earlier finding that ~95% of the forward-only liability is in-band, not from spurious high modes); `λ=10`'s error map is essentially black everywhere. This pattern is identical in-distribution (`ls=0.20`) and OOD (`ls=0.05`).
+<p align="center">
+  <img alt="image" src="https://github.com/user-attachments/assets/80d617ed-eee4-4a3d-b402-28ecc2c45192">
+</p>
+
+* Phase maps — attempted, did not work: `arg J(k,q)` is dominated by a rapidly-winding kinetic phase term (`e^{-iE_kT}` with `E_k ∝ k²`, from the Born approximation), which fills the whole plane with a fine, physically-real herringbone texture that swamps any model-vs-truth difference by eye.
+<p align = center>
+<img width="1934" height="1216" alt="image" src="https://github.com/user-attachments/assets/73b8a489-d17e-4cc4-872c-494b3d39f299" />
+</p>
 
 ---
 ## Scope cuts 
