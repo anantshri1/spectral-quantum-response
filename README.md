@@ -412,9 +412,105 @@ We summarize these findings below:
 * γ (git status) checkpoint-tracking hygiene: checkpoints and precompute `.npz files` (the latter ~400MB) were, until this phase's cleanup, untracked-but-unignored; added to `.gitignore`.
 
 ---
+## Perturbation-Theory Baseline and the Response-Fidelity Mechanism
+Every response-error number in the project so far (`0.587` forward-only, `0.057` DINO-repaired) had only ML-native anchors: 0 (exact) and 1.0 (random/untrained). This phase adds the missing physicist anchor — **first-order time-dependent perturbation theory (the Born approximation)** — and uses it to test what kind of approximation the FNO's response actually is. It also finally locates the spectral-capacity sign flip (why extra modes help under DINO but hurt without it) inside mode space, after a false start that had to be diagnosed and discarded.
+
+### Physics and derivation
+The response `∂ψ_T/∂V` is exactly the first-order term of the Dyson expansion in the interaction picture:
+```
+ψ_I(T) ≈ ψ₀ − i ∫₀ᵀ V_I(t) ψ₀ dt,      V_I(t) = e^{iH₀t} V e^{-iH₀t}
+```
+Projected into momentum space (`H₀ = k²/2` is diagonal there — the ring's free-rotor spectrum), differentiating w.r.t. a single Fourier component `V̂(q)` and doing the time integral gives the continuum result:
+```
+J⁰_cont(k,q) = −i e^{−iE_k T} ψ̂₀(k−q) · ∫₀ᵀ e^{iΔt}dt,     Δ = E_k − E_{k-q}
+```
+Two things worth internalizing: 
+1. the amplitude is proportional to `ψ̂₀(k−q)`, the initial state's momentum content at the momentum being scattered from — so the response's coupling band is centered wherever the initial wavepacket's momentum peaks (its carrier `k₀`), not at `k=q`. This is a genuine physics prediction.
+2. The time integral has a removable singularity at `Δ=0` (resonant, energy-conserving channel): `∫₀ᵀe^{iΔt}dt → T` as `Δ→0`, the seed of Fermi's golden rule — off-resonance the phase rotates and partially cancels (sinc suppression), on-resonance it builds up linearly in `T`.
+
+Crucial design choice — discrete, not continuum, Born. The solver evolves via Strang splitting: `exp(-iV dt/2)·exp(-iK dt)·exp(-iV dt/2)` per step, and consecutive half-kicks merge into full interior kicks. This means the entire propagator's V-dependence collapses to a sum with trapezoidal weights (`dt/2` at the endpoints, `dt` interior) — i.e. the solver's own discrete kick structure is a trapezoid quadrature of the continuum integral. Deriving Born against this exact discrete structure (rather than the textbook continuum formula) means the closed form can be gated to float64 machine precision against the solver's own linearization, instead of only agreeing to `O(dt)` like a continuum approximation would. This was a deliberate fork (discrete vs continuum Born) resolved in favor of discrete specifically so the two objects being compared are the same thing.
+
+Final closed form, rotated into the (k,q) mode-coupling basis used everywhere else in the project:
+```
+J⁰(k,q) = −(i/nx)·e^{−iE_k T}·ψ̂₀(k−q)·S(Δ)
+S(Δ):  Δ=0 → T;   Δ≠0 → dt·[½ + ½r^{nt} + (r−r^{nt})/(1−r)],  r = e^{iΔ·dt}
+```
+
+The `1/nx` is forced by `mode_coupling_matrix`'s IFFT normalization convention, and getting it from the code (rather than guessing a textbook constant) is exactly what let the gate close.
+
+### Bug found and fixed: Brillouin-zone aliasing
+
+**Symptom**: initial gate against `jacfwd(evolve)` at `V=0` gave `rel-err 1.17e-3` — small but far from float64 noise, and shrinking as `nt` grew rather than the expected precision-loss growth.
+
+**Diagnosis:** an `nt`-sweep showed the error was largest at small `nt` and concentrated at a specific corner of the `(k,q)` grid: `(k=−61, q=63)`, where the raw `Δ = k·q − q²/2` used `k−q = −124`. But the grid only holds wavenumbers in `[−64,63]` — the free propagator only ever acts on the aliased (Brillouin-zone-folded) mode, not the raw signed difference. $E_{k−q}$ was computed from `(−124)²` instead of the true aliased mode `−124 ≡ 4 (mod 128)`, giving an energy off by `~1000` — a large phase error exactly on high-magnitude, on-band grid points (since the amplitude gather `ψ̂₀(k−q)` already used `% nx` correctly, only the phase was wrong). The magnitude-only band check never caught this because it only tests `|J⁰|`, not phase.
+
+**Fix:** fold `(k−q)` into `[−nx/2, nx/2)` before squaring: `kmq_alias = ((k−q + nx//2) % nx) − nx//2, then Δ = ½(k² − kmq_alias²)`. After the fix: gate error `7.7×10⁻¹⁴`, at the float64 floor, and now correctly growing (not shrinking) with `nt` — the signature of pure round-off accumulation rather than a structural error.
+
+**General lesson:** any `k²` kinetic-energy term computed from a difference of grid indices must fold to the first Brillouin zone before use — a silent, magnitude-invisible bug class.
+
+### Result: Born vs $J_{true}$, and Born vs FNO
+
+**Over 200 test samples**: Born mean response error `0.6506` (`std 0.299, median 0.602, range [0.108, 1.534]`) — the FNO forward-only (f64-trained) floor is `0.587` (`3-seed mean; seed0 = 0.5787`). These are a statistical tie. **Interpretation**: an FNO trained on 2000 solved trajectories with 139k parameters is only marginally better, on average, than a zero-data, closed-form, first-order physics approximation at predicting its own response operator.
+
+But the per-sample structure tells a sharper story: correlating `born_errs` against `fno_errs` (same 200 samples, same alignment by construction): `Pearson r = 0.107 (p=0.13)`, `Spearman ρ = 0.097 (p=0.17)` — statistically uncorrelated. The samples that defeat perturbation theory are not the samples that defeat the FNO. This rules out "the FNO is secretly doing perturbation theory (plus some higher-order correction)" — if that were true the FNO would be at least as good as Born everywhere, and especially good on near-perturbative samples where there's little left to correct. Instead:
+
+**Flatness result (median-split diagnostic)**: splitting the 200 samples at the Born median into "perturbative" vs "non-perturbative" bins: Born swings +0.463 across the split (0.419 → 0.882, as expected — it's directly sensitive to perturbativeness), while the FNO swings only +0.016 (0.571 → 0.586) — 29× less sensitive. Critically, on the most perturbative samples, the FNO (0.571) is worse than Born (0.419) — it loses exactly where PT is nearly exact, which is impossible if the FNO were "PT plus corrections." The FNO's response error is a roughly constant ~0.58 regardless of how perturbative the physics is — a representational error floor set by what the network can express, not by the difficulty of the physics. It beats Born on hard samples only because Born diverges there, not because the FNO understands non-perturbative structure.
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/bfe8f242-8d9d-4933-b0e7-3fbd9fb12855" width="450">
+    </td>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/d938402c-ff1e-4638-a91e-3c0dbd96b356" width="450">
+    </td>
+  </tr>
+</table>
+
+---
+## The Spectral Capacity Mechanism
+Previous single-sample (`k₀=4`, the most extreme carrier momentum in the test set) observation showed `J_true` keeps `99.5%` of its mass within `|k−q|≤16` while `J_fno` visibly leaked mass outside — suggesting the FNO "hallucinates" spurious coupling beyond the true response band, and that this leakage might explain why extra spectral modes (`M16` vs `M12`) are a liability at `λ=0` but an asset under DINO supervision.
+
+**Band metric built**: for each sample, the smallest radius `w` around its own carrier `k₀` capturing `95%` of that sample's own `J_true` mass, in the folded offset coordinate `d=k−q`. Self-consistency gate: `J_true`'s own off-band mass under its own `band ≈ 0.046 ≈ 1−0.95 ✓`. Gate against previous observation: mass within `|d|≤16` (global convention) reproduced `0.995` bit-for-bit, confirming the cache and offset convention matched `compute_response.py` exactly. Band widths across the 200 samples: `min 5, median 7, max 9` — comfortably inside the `M=16` mode budget, meaning any FNO off-band leakage would be a learned pathology, not a capacity ceiling.
+
+**First measurement (off-band mass fraction of `|J_fno|`), `3-seed grid over M∈{12,16}×λ∈{0,0.1,1,10}`**: did not show the predicted sign flip. At `λ=0`, `M16` and `M12` off-band mass were statistically indistinguishable (`0.140 vs 0.160`, overlapping spreads) — despite M16's response error being far worse (`0.587 vs 0.262`). Off-band mass fraction was not carrying the mechanism.
+
+**Refined measurement (off-band error mass, phase-aware — `‖(J_fno−J_true)‖` restricted to off-band, both as a fraction and in absolute terms)**: this is where the hypothesis was cleanly falsified. Absolute error split at `λ=0`, 3-seed:
+
+|    | off-band error     |  in-band error |
+|----|-----|----|
+|M12	|0.032|	0.133|
+|M16|	0.041	|0.305|
+
+`M16`'s extra error over `M12` is `+0.009` off-band vs `+0.172` in-band — a `19×` difference. The liability is `~95%` in-band, not hallucinated off-band coupling. The off-band mechanism, seeded by a single high-stress sample, did not survive scaling to 200 samples and 3 seeds.
+
+### Truncate-at-inference: is it specifically the extra modes?
+
+One remaining ambiguity: `M12` and `M16` are separately trained networks, so "`M16`'s liability is in-band" doesn't yet say why — it could be that modes 12–15 themselves inject bad in-band coupling, or that `M16` simply fits the shared low modes (0–11) worse. To isolate this without the confound of comparing two different trained networks, `truncate_model()` helper (zeroes spectral weights for modes `M..15`, holding all other weights fixed) was reused: take the single `M16 λ=0` network and zero its modes 12–15 at inference only.
+
+**Result:** in-band error did not improve — `0.300 (full) → 0.324` (modes 12–15 zeroed), essentially flat / slightly worse. This rules out "the extra modes themselves are actively corrupting in-band coupling." The liability lives in the shared low modes (0–11) — i.e., given more capacity, the same optimizer, on the same task, converges to a worse solution for the low-mode coupling both networks have access to. This is a capacity/optimization-implicit-bias effect, not a spectral-leakage effect.
+
+> Two gates protected this conclusion: the truncate-to-16 no-op reproduced the full model's in-band error exactly (`0.300 = 0.300`), and the block's own `e_full` (`0.300`) reproduced the earlier measurement (`0.305`) within rounding — confirming the truncation machinery and the error-region bookkeeping agree.
+
+### Final confirmed mechanism
+
+Unsupervised excess spectral capacity causes the FNO to converge to a worse low-mode, in-band response solution than a smaller model achieves — not because the extra modes hallucinate coupling outside the physical band, and not because the extra modes themselves inject damage, but because more capacity, absent derivative supervision, appears to under-constrain the fit of the coupling structure the model is actually supposed to represent. DINO repairs this precisely where it lives: `M16`'s in-band error collapses `6.4× (0.305 → 0.048)` between `λ=0` and `λ=0.1`, and the `M16-vs-M12` in-band gap flips sign exactly where the whole response-error sign flip does (`+0.172 liability at λ=0 → negative/asset at every λ>0`, 3-seed, non-overlapping). 
+
+### Key learnings 
+* Mass ≠ error, and they can point in opposite directions. Off-band mass fraction actually decreased for the worse model (`M16`) at `λ=0`, because its in-band error grew so much that off-band became a smaller share of a bigger total — a naive reading would have concluded the opposite of the truth. Always inspect absolute error, split by region, before trusting any normalized ratio.
+* Single-sample observations can seed misleading mechanisms. The off-band story came from the single most extreme-`k₀` sample in the set — precisely the point most likely to show off-band stress. Confirmatory testing at scale (200 samples, 3 seeds) is what caught this.
+* Pre-registering the interpretation before seeing numbers is what prevented rationalizing a dead hypothesis across two further rounds of measurement.
+* Checkpoint provenance is a first-class bug category. Two different loaders exist for a reason (`load_fno_x64` for `f32-origin-cast-to-f64`, `load_fno_f64_ckpt` for genuinely f64-trained weights) — silently using the wrong one produces a plausible-looking but wrong number (0.5113 vs the correct 0.5787/0.587), and the discrepancy can masquerade as a seed-variance or renormalization-convention issue before the real cause (training precision, not eval precision) is found.
+
+---
+## Seed Insurance
+---
+
+## Performance on OOD potentials
+
+---
 ## Scope cuts 
 * Norm-violation penalty as an active loss term — logged as a passive diagnostic throughout (and it improves under DINO as a side effect), but never tested as its own supervised arm. Would need to be a separate ablation to avoid confounding attribution with the derivative-matching term.
-* OOD potentials (train on low-complexity V, test response generalization on higher-complexity V) — deferred to a later session per current plan, not started.
 * Warmup necessity — used throughout (50 epochs, held fixed across the λ sweep) as a stability precaution; never ablated against warmup-off, since nothing diverged at any tested λ and there was no empirical pressure to isolate it.
 
 ---
