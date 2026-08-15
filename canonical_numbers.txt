@@ -118,3 +118,53 @@ response error at matched data, and forward-only would need far more data — an
 puts reaching DINO's λ=0.1 level somewhere around 10⁴–10⁵ samples, but I'd only cite the measured 5.7× at N=2000 and 
 call the rest illustrative, because we can't pin the asymptote. Reframed claim: you can buy response fidelity with forward data, 
 but at a data cost so large that supervision is dramatically cheaper.
+
+================================================================
+10. RESPONSE — JACOBIAN ALIGNMENT DECOMPOSITION (r, cos), f64   [CANONICAL]
+================================================================
+Decomposition: raw^2 = r^2 + 1 - 2*r*cos  (exact identity, r=scale, cos=direction)
+Threshold: raw > 1 (worse than random-init) iff r > 2*cos  (derived + confirmed)
+
+--- lambda=0, M16 vs M12, N2000, 4-SEED (M16 3-seed for lam0.1 row) ---
+config          r                  cos                resid (rescaled)
+M16 lambda=0    1.149 +/- 0.005    0.859 +/- 0.003     0.504 (seed0)
+M12 lambda=0    1.011 +/- 0.008    0.965 +/- 0.007     0.242 (seed0)
+M16 lambda=0.1  0.9946+/- 0.0008   0.9941+/- 0.0002    0.103 (seed0)
+M16 lambda=10   0.9977+/- 0.0004   0.9982+/- 0.0001    0.057 (seed0)
+No-overlap gaps (M16 vs M12, lambda=0): r-gap 0.124-0.138, cos-gap 0.095-0.10
+  -> capacity liability lives on BOTH axes; M12 is nearly scale-clean (r~1.01).
+
+--- lambda=0, M16, ACROSS N, 3-SEED (seeds 0-2 only, matches Task A vsN) ---
+N       r                  cos               raw (matches Sec.9-vsN Task A)
+250     1.4203 +/- 0.018   0.6076 +/- 0.007  1.140
+500     1.3644 +/- 0.015   0.6838 +/- 0.008  1.000
+1000    1.2719 +/- 0.007   0.7627 +/- 0.005  0.824
+2000    1.1486 +/- 0.005   0.8588 +/- 0.003  0.587
+Gap-to-perfect closes ~64-65% (both axes) from N250->N2000, IN LOCKSTEP
+(r-1 slightly > 1-cos throughout -> scale marginally more stubborn).
+r>2cos threshold crosses raw=1 at N~500 (r=1.364, 2cos=1.368) -- matches
+measured raw=1.000 at N500. Independent validation of the decomposition.
+
+--- lambda=0.1 (DINO), M16, ACROSS N, 3-SEED ---
+N       r                  cos
+250     0.9510 +/- 0.0016  0.9382 +/- 0.0042
+500     0.9709 +/- 0.0013  0.9730 +/- 0.0012
+1000    0.9864 +/- 0.0012  0.9877 +/- 0.0006
+2000    0.9946 +/- 0.0008  0.9941 +/- 0.0002
+DINO N250 beats forward-only N2000 on BOTH axes (0.951/0.938 vs 1.149/0.859)
+at 1/8 the data. DINO regime is UNDER-energetic (r<1, opposite sign from
+forward-only) with axes nearly BALANCED (1-r ~ 1-cos at every N) --
+qualitatively different failure geometry from forward-only's over-energetic,
+scale-dominant profile.
+
+  [Real-alpha / real-cos is a DELIBERATE design choice, not an oversight:
+   response_error carries no U(1) phase freedom (both Jacobians share the
+   solver's fixed phase convention per its own docstring) -- a complex alpha
+   would hide genuine phase error as false "alignment." Validated by the
+   i*A synthetic gate: complex-alpha would score a pure 90-deg phase error
+   as cos~1 (aligned); real-alpha correctly scores it cos~0 (orthogonal).]
+
+  [3-seed vsN caveat: lambda=0.1 vsN leg (Task A original) has no seed3 --
+   both vsN tables above are 3-seed. N2000 rows of both tables are
+   provenance-gated against the 4-seed align_seed*.npz files at the seed0-2
+   overlap and match to float precision.]
