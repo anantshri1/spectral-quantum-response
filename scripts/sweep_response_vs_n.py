@@ -7,7 +7,8 @@ import os, sys, subprocess, argparse, itertools
 NS    = [250, 500, 1000, 2000]
 SEEDS = [0, 1, 2]
 M     = 16
-LAM   = 0.0
+LAM    = 0.1          # was 0.0
+WARMUP = 50           
 
 def ckpt_path(n, s):
     # MUST match train_dino's write string exactly (lines 212-214):
@@ -36,8 +37,9 @@ def main():
             continue
 
         cmd = [sys.executable, "-m", "scripts.train_dino",
-               "--n_train", str(n), "--seed", str(s),
-               "--n_modes", str(M), "--dino_lambda", str(LAM)]
+                "--n_train", str(n), "--seed", str(s),
+                "--n_modes", str(M), "--dino_lambda", str(LAM),
+                "--warmup", str(WARMUP)]            
         log = f"logs/sweep_n/dino_N{n}_seed{s}_M{M}_lam{LAM}.log"
         print(f"[run ] {tag}  -> {path}  (log: {log})")
         with open(log, "w") as f:

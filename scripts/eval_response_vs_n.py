@@ -49,33 +49,37 @@ print("[gate] PASSED — loop reproduces canonical machinery. Safe to eval the N
 
 # --- N-loop (NEW): M16, lam0, seeds 0-2. Skip-if-exists; skip-if-ckpt-missing. ---
 os.makedirs("results", exist_ok=True)
-NS, SEEDS = [250, 500, 1000, 2000], [0, 1, 2]
+# replace the "NS, SEEDS = ..." line and the N-loop with:
+NS, SEEDS, LAMS = [250, 500, 1000, 2000], [0, 1, 2], [0.0, 0.1]
 
-for n in NS:
-    row = []
-    for s in SEEDS:
-        if n == 2000:
-            # same checkpoint as the 4-seed grid -> reuse its per-sample cache
-            # (identical object; ties the N-anchor to the canonical 0.5787/0.587)
-            src = f"results/resp_errs_200_seed{s}_M16_lam0.0.npy"
-            if not os.path.exists(src):
-                print(f"[vsN] N=2000 seed={s}: grid cache missing, skip"); continue
-            errs = np.load(src)
-        else:
-            save = f"results/resp_errs_vsN_N{n}_seed{s}_M16_lam0.0.npy"
-            ckpt = f"checkpoints/dino_N{n}_seed{s}_M16_lam0.0_final.eqx"
-            if os.path.exists(save):
-                errs = np.load(save)
-            elif not os.path.exists(ckpt):
-                print(f"[vsN] N={n:<4} seed={s}: ckpt not trained yet, skip"); continue
+for lam in LAMS:
+    print(f"===== lambda = {lam} =====")
+    for n in NS:
+        row = []
+        for s in SEEDS:
+            # only lam=0 N=2000 reuses the canonical 200-sample grid cache;
+            # lam=0.1 N=2000 is recomputed from the freshly retrained ckpt (supersedes provisional)
+            if n == 2000 and lam == 0.0:
+                src = f"results/resp_errs_200_seed{s}_M16_lam0.0.npy"
+                if not os.path.exists(src):
+                    print(f"[vsN] N=2000 seed={s} lam={lam}: grid cache missing, skip"); continue
+                errs = np.load(src)
             else:
-                errs = response_errs_for(ckpt)                # M16 default
-                np.save(save, errs)                           # save AFTER each
-                assert np.all(np.isfinite(errs)) and errs.mean() < 2.0, \
-                    f"N={n} seed={s} implausible — STOP"
-        print(f"[vsN] N={n:<4} seed={s}  response mean {errs.mean():.4f}")
-        row.append(errs.mean())
-    if row:
-        row = np.array(row)
-        print(f"      -> N={n:<4} across {len(row)} seed(s): "
-              f"mean {row.mean():.4f}  std {row.std(ddof=1) if len(row)>1 else 0:.4f}\n")
+                save = f"results/resp_errs_vsN_N{n}_seed{s}_M16_lam{lam}.npy"
+                ckpt = f"checkpoints/dino_N{n}_seed{s}_M16_lam{lam}_final.eqx"
+                if os.path.exists(save):
+                    errs = np.load(save)
+                elif not os.path.exists(ckpt):
+                    print(f"[vsN] N={n:<4} seed={s} lam={lam}: ckpt not trained yet, skip"); continue
+                else:
+                    errs = response_errs_for(ckpt)          # M16 default
+                    np.save(save, errs)
+                    assert np.all(np.isfinite(errs)) and errs.mean() < 2.0, \
+                        f"N={n} seed={s} lam={lam} implausible — STOP"
+            print(f"[vsN] N={n:<4} seed={s} lam={lam}  response mean {errs.mean():.4f}")
+            row.append(errs.mean())
+        if row:
+            row = np.array(row)
+            print(f"      -> N={n:<4} lam={lam}: mean {row.mean():.4f}  "
+                  f"median {np.median(row):.4f}  "
+                  f"std {row.std(ddof=1) if len(row)>1 else 0:.4f}\n")
