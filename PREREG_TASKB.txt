@@ -36,3 +36,25 @@ P-B4 (CAPACITY LIABILITY IS DIRECTIONAL). lam0, M12 (0.257) vs M16 (0.587): both
   r ~ 1, so the M16 liability lives in cos — cos_M12 ~ 0.96 > cos_M16 ~ 0.83.
   Higher spectral capacity degrades response DIRECTION, not scale.
   FALSIFIER: |r_M16 - r_M12| > 0.15 => the capacity gap is (partly) a scale effect.
+
+  AMENDMENT (seed0, post-data — magnitudes provisional, await 4-seed block 2c):
+ROOT ASSUMPTION FALSIFIED: "forward accuracy pins Jacobian scale (r~1)".
+  M16 lam0 r=1.144 despite fwd rel-L2=0.019. Cascade:
+- P-B1 core HOLDS (resid 0.504 >> 0.45 falsifier: directional). Scale sub-claim
+  wrong: rescale removed 13%, predicted <7%.
+- P-B4 direction-dominant HOLDS (resid 0.242 M12 vs 0.504 M16). |dr|=0.138 (<0.15
+  falsifier) => secondary scale component. New: M12 error is ~pure misalignment
+  (r=1.006, resid~raw); capacity adds a scale error (r->1.144) AND worsens cos.
+- P-B3 r-in-band-under-DINO HOLDS (0.994/0.997). "DINO moves cos not r" AMENDED:
+  DINO repairs BOTH axes (r 1.14->0.99, cos 0.86->0.99+).
+Qualitative r>1 and r_M16>r_M12 expected robust (large effect).
+
+AMENDMENT 2 (P-B2, post-data, 3-seed):
+PREDICTION FALSIFIED: "decline carried mostly by r; cos rises modestly, <0.85 at N2000".
+  Actual: cos 0.608->0.859 (64% of gap closed); r-1 0.420->0.149 (65% closed).
+  Scale and direction improve in near-lockstep, r-1 slightly > 1-cos throughout,
+  converging with N. Forward data buys both axes at ~equal fractional rate.
+  My cos>0.90 falsifier was mis-specified (too lax); soft bound cos<0.85 also missed
+  (0.859). Logged as falsification of the substantive claim.
+CONFIRMED (Task-A carry-over): raw>1 <=> r>2cos. Crossover at N~500 where r~2cos
+  (r=1.364, 2cos=1.368, raw=1.000). Decomposition reproduces the threshold.
