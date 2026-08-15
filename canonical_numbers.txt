@@ -100,13 +100,18 @@ k0 M-shape (0.489 / 0.592 / 0.540 / 0.505 / 0.428) — f32, parked, mechanism no
 truncate-at-inference table (1.037 -> 0.511) — f32
 
 ================================================================
-9. Response vs N (Sweep)
+9. RESPONSE vs N (data-efficiency), f64, M16, 3-seed, warmup=50   [CANONICAL]
 ================================================================
-N       response (mean ± std)     forward (~)
-250     1.140 ± 0.023             0.106
-500     1.000 ± 0.021             ~0.05
-1000    0.824 ± 0.012             ~0.03
-2000    0.587 ± 0.009             0.019
+N       lam=0 (forward-only)   lam=0.1 (DINO)    gap
+250     1.140 +/- 0.023        0.336 +/- 0.013   3.4x
+500     1.000 +/- 0.021        0.221 +/- 0.005   4.5x
+1000    0.824 +/- 0.012        0.148 +/- 0.003   5.6x
+2000    0.587 +/- 0.009        0.1034 +/- 0.0017 5.7x
+
+DINO at N=250 (0.336) BEATS forward-only at N=2000 (0.587). Gap WIDENS with N.
+Both curves still falling at N=2000 -> report measured gap, NOT convergence.
+lam=0 N<=500 sits above the 1.0 random-init floor (over-energetic misaligned Jacobian).
+
 At the same 2000 samples, forward-only reaches response 0.587 and hasn't converged; DINO reaches 0.103 (λ=0.1) or 0.057 (λ=10). 
 So this curve becomes the baseline that quantifies DINO's data-efficiency: derivative supervision buys ~5.7–10× lower 
 response error at matched data, and forward-only would need far more data — an extrapolation of the observed trend 
