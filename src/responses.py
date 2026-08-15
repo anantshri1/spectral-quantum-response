@@ -108,3 +108,63 @@ def response_error(J_fno, J_true):
     differently-phased forwards.
     """
     return jnp.linalg.norm(J_fno - J_true) / jnp.linalg.norm(J_true)
+
+def frob_inner(A, B):
+    """
+    Complex Frobenius inner product  <A, B> = sum_ij conj(A_ij) B_ij.
+
+    Convention: A occupies the conjugated ("left") slot, so <A,A> = ||A||_F^2,
+    real and >= 0. Antilinear in A, linear in B. Its induced norm is exactly
+    jnp.linalg.norm(., 'fro'), so it is the correct partner for response_error's
+    Frobenius metric.
+    """
+    return jnp.sum(jnp.conj(A) * B)
+
+
+def scale_ratio(J_fno, J_true):
+    """
+    r = ||J_fno||_F / ||J_true||_F  — the MAGNITUDE half of the error.
+    r > 1: FNO Jacobian over-energetic; r < 1: under-energetic.
+    (Recall raw response_error^2 = r^2 + 1 - 2 r cos, so r and cos fully
+    reconstruct the scalar error.)
+    """
+    return jnp.linalg.norm(J_fno) / jnp.linalg.norm(J_true)
+
+
+def cosine_alignment(J_fno, J_true):
+    """
+    Directional alignment, REAL-valued:
+        cos = Re<J_fno, J_true> / (||J_fno|| ||J_true||).
+
+    Re part is deliberate. A complex 'alignment' would smuggle a global phase
+    into the metric, but response_error carries NO U(1) freedom (see its
+    docstring): both Jacobians inherit the solver's fixed phase frame. Taking
+    Re keeps that honest — genuine phase error stays counted as misalignment
+    instead of being rotated away. cos in [-1, 1]; cos = 1 iff J_fno = c J_true
+    for real c > 0.
+    """
+    num = jnp.real(frob_inner(J_fno, J_true))
+    den = jnp.linalg.norm(J_fno) * jnp.linalg.norm(J_true)
+    return num / den
+
+
+def optimal_rescale(J_fno, J_true):
+    """
+    Best REAL scalar alpha minimizing ||alpha J_fno - J_true||_F, plus the
+    residual it leaves:
+
+        alpha* = Re<J_fno, J_true> / ||J_fno||^2
+        residual = ||alpha* J_fno - J_true||_F / ||J_true||_F
+
+    alpha REAL for the same reason cos takes Re: a complex alpha would re-absorb
+    a global phase and flatter the model by hiding phase error as 'alignment'.
+
+    Free correctness gate:  residual == sqrt(1 - cos^2)  exactly, with cos from
+    cosine_alignment. Disagreement beyond ~1e-12 (f64) means the algebra or a
+    dtype is wrong.
+
+    Returns (alpha_star, residual).
+    """
+    alpha = jnp.real(frob_inner(J_fno, J_true)) / jnp.linalg.norm(J_fno) ** 2
+    residual = jnp.linalg.norm(alpha * J_fno - J_true) / jnp.linalg.norm(J_true)
+    return alpha, residual

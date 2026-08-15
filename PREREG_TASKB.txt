@@ -1,0 +1,38 @@
+PRE-REGISTRATION — Task B: Jacobian alignment decomposition
+Committed BEFORE loading any real checkpoint. Machinery validated on synthetic
+data only (gate_block1: all 4 gates passed, |diff| <= 1e-16, invariance 1e-18).
+
+Notation:
+  r        = ||J_fno|| / ||J_true||                      (SCALE)
+  cos      = Re<J_fno,J_true> / (||J_fno|| ||J_true||)   (DIRECTION, real)
+  resid    = ||a* J_fno - J_true|| / ||J_true|| = sqrt(1-cos^2)  (scale-corrected err)
+  raw err^2 = r^2 + 1 - 2 r cos     (so r,cos fully reconstruct the scalar error)
+Known raw errors (canonical, f64): M16 lam0 N2000 = 0.587; M12 lam0 = 0.257;
+  lam0.1 M16 = 0.103; lam10 M16 = 0.057. Across N (lam0 M16): 1.140/1.000/0.824/0.587.
+
+P-B1 (CORE). N2000, lam0, M16: forward training PINS SCALE, so r in [0.9,1.1].
+  Consequence: rescaling barely helps — resid drops from 0.587 to ~0.56 only
+  (<7% relative). Failure is DIRECTIONAL: cos ~ 0.82-0.84.
+  FALSIFIER: resid < 0.45, or r outside [0.85,1.15]  => scale was a real contributor.
+
+P-B2 (ACROSS-N). lam0 M16, N 250->2000: the known raw-error decline (1.14->0.587)
+  is carried MOSTLY by r descending toward 1 from above (over-energetic underfit
+  relaxing); cos rises only modestly and stays < 0.85 at N2000. Forward data buys
+  SCALE faster than DIRECTION.
+  FALSIFIER: cos > 0.90 by N2000 (forward data DOES buy direction), or r ~ 1
+  already at N250 (decline was all direction).
+  [MOST UNCERTAIN prediction. err>1 at N250 forces r>2cos there, favoring r-descent,
+   but the cos endpoint is genuinely open. Flagged.]
+
+P-B3 (DINO = DIRECTION-FIXER). lam 0 -> 0.1 -> 10 (M16, N2000): r stays ~1
+  throughout (forward accuracy maintained), while cos climbs 0.83 -> ~0.995 -> ~0.998.
+  DINO moves cos, not r.
+  FALSIFIER: r drifts outside [0.9,1.1] under DINO => gain came partly via rescale.
+  [Caveat: low raw err mechanically forces high cos (sqrt(1-cos^2)<=err), so high
+   cos at lam10 is PARTLY forced, not independent evidence. Falsifiable content =
+   r staying ~1, and the lam0.1 midpoint.]
+
+P-B4 (CAPACITY LIABILITY IS DIRECTIONAL). lam0, M12 (0.257) vs M16 (0.587): both
+  r ~ 1, so the M16 liability lives in cos — cos_M12 ~ 0.96 > cos_M16 ~ 0.83.
+  Higher spectral capacity degrades response DIRECTION, not scale.
+  FALSIFIER: |r_M16 - r_M12| > 0.15 => the capacity gap is (partly) a scale effect.
