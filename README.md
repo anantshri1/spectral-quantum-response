@@ -627,11 +627,227 @@ For the forward-only model: forward rel-L2 stays inside a conventionally "accept
 </p>
 
 ---
+## Response-vs-N
+Every result so far compared forward-only vs DINO at a fixed `N=2000`. That leaves an obvious gap: *maybe forward-only just needs more data to catch up on response, in which case the whole DINO story is really "faster convergence," not "a different regime."* This experiment closes that gap by sweeping training-set size directly.
+
+### Infrastructure
+`train_dino.py` gained a `--n_train` flag (`default None = full 2000`, fully backward-compatible). The subtlety: DINO's precompute file (`dino_precompute.npz`, containing `v_all/Jv_all` — the derivative-supervision reference directions) is row-aligned to the training set, and the code already asserts that alignment on load. Slicing the training arrays to `[:n_train]` without slicing the precompute arrays identically would silently break that alignment — you'd train against the wrong sample's reference. Fix: take a contiguous prefix of both the data and the precompute arrays together, applied after the existing alignment assert, so the assert still validates against the full 2000 (strongest check) and the prefix inherits that guarantee for free (a prefix of two aligned arrays is still aligned). Verified the prefix was an unbiased sample before trusting it — compared `‖V‖` statistics between the first 250 and last 250 rows of `train.npz`; they matched within sampling noise, confirming the file isn't sorted by any generation parameter.
+
+Two new disposable scripts: `sweep_response_vs_n.py` (launches one subprocess per `(N, seed, λ)` cell — a fresh process each time, since `JAX`'s x64 mode is a global flag best not shared across runs; skips a cell only if its `_final.eqx` checkpoint already exists, so a crashed run correctly re-runs rather than being mistaken for done) and `eval_response_vs_n.py` (loops the same cells through the response-error evaluation). The eval script's core loop was copied verbatim from the existing gated evaluator rather than imported, specifically to inherit its already-proven `(k,q)` indexing convention without triggering that file's other side effects. Every run re-validates against the frozen `0.5787` anchor before trusting anything else — that gate passed at exact floating-point equality (0.00e+00) on every invocation.
+
+### Results
+Grid: `N ∈ {250, 500, 1000, 2000}`, 3 seeds, `M=16`, `warmup=50` (matched to the canonical DINO protocol throughout)
+
+|N   | lam=0 (forward-only) |   lam=0.1 (DINO) |   gap|
+|-|-|-|-|
+|250 |    1.140 +/- 0.023    |    0.336 +/- 0.013  | 3.4x|
+|500   |  1.000 +/- 0.021    |    0.221 +/- 0.005 |  4.5x|
+|1000  |  0.824 +/- 0.012    |    0.148 +/- 0.003  | 5.6x|
+|2000  |  0.587 +/- 0.009   |     0.1034 +/- 0.0017 |5.7x|
+
+> **Pre-registered prediction, falsified**. Before running, we predicted forward-only response would plateau with `N` — the intuition being that if the failure is structural (a bad linearization the endpoint loss can't see), more data of the same kind shouldn't fix it. It didn't plateau: the decline is monotonic, every N-step is outside the next one's error bars, and the decrements are growing (`−0.14, −0.18, −0.24`), i.e. still accelerating downward at N=2000, which is the largest N the dataset supports (only 2000 samples exist in `train.npz` — this is a hard ceiling, not a stopping choice). 
+
+**What the data shows** — DINO at `N=250` (`0.336`) already beats forward-only at the full `N=2000` (`0.587`): a model trained on one-eighth the data, but with derivative supervision, produces a more faithful response operator than one trained on all the data without it. And the advantage isn't a fixed head start — the ratio widens with `N` (`3.4× → 4.5× → 5.6× → 5.7×`), meaning more data helps DINO relatively more, not less. A milder, less interesting version of this experiment would have shown a constant gap that data eventually closes; that's not what happened.
+
+> There's also a second, independent confirmation of the seed-variance-collapse effect (previously shown only at `λ=10`, fixed `N=2000`): under DINO supervision, seed-to-seed standard deviation drops 4–5× at every N in this sweep (from `~0.012–0.023` down to `~0.003–0.005`). Supervision doesn't just lower the average error, it makes the result reproducible, across the whole data range, not just at one operating point.
+
+At `N ≤ 500`, forward-only response sits above the "random guess" floor (`1.0`). This isn't a bug (the eval pipeline's exact-equality gate against the frozen cache rules that out); it's a real, checkable mathematical fact about the metric. If one were to write the metric in terms of two quantities: `r = ‖J_fno‖/‖J_true‖` (how much energy the learned Jacobian carries relative to the truth) and `cos = the alignment between them` (1 = perfectly aligned, 0 = orthogonal). Then:
+```
+response_error = √(r² + 1 − 2·r·cos)
+```
+At `r=0` (a Jacobian of all zeros — "predict nothing") this equals exactly 1, which is why 1.0 is the natural floor. But error exceeds 1 exactly when `r > 2·cos` — i.e. when the learned Jacobian is both **over-energetic** (too much magnitude) and **poorly aligned** (pointing the wrong way). Checked the full per-sample distribution at `N=250`: `median ≈ mean ≈ 1.16`, with 93% of individual samples above `1.0` — so this is a uniform property of the whole checkpoint, not a few outliers dragging up an otherwise-fine average. Mechanistically this is a plausible signature of overfitting: 500 epochs on only 224 effective per-epoch samples (2000-sample batches drop a remainder; N=250 → 224/epoch after the batch-size-32 floor division) against a 139k-parameter model, where nothing in the forward endpoint loss constrains the linearization to stay bounded — an overfit forward solution can produce an arbitrarily loud, wrong derivative while the endpoint itself still looks locally fine.
+
+<p align=center>
+ <img width = "577" height = 400"" alt="image" src="https://github.com/user-attachments/assets/785b4f39-a3a7-469c-9f37-eca62449eb24" />
+</p>
+
+
+---
+## Jacobian Alignment
+
+`response_error` (the single scalar we have reported so far) is
+`||J_fno - J_true||_F / ||J_true||_F`. It conflates two independent failure
+modes:
+* the FNO Jacobian can be the **wrong size** (over/under-energetic) and/or
+* pointing the **wrong direction** (misaligned).
+
+A model can be forward-accurate
+(`rel-L2 ~0.02`) and still get the response's magnitude wrong — forward
+training constrains `psi_T`, not the derivative's scale. This section splits
+the scalar into its two orthogonal components and asks which one is doing
+the damage, and whether DINO (derivative supervision) fixes one or both.
+
+### Mathematical Background
+Define, for a complex Jacobian pair (`J_fno, J_true`):
+```
+  frob_inner(A,B)     = sum_ij conj(A_ij) B_ij            (complex Frobenius IP)
+  r   = ||J_fno|| / ||J_true||                             SCALE ratio
+  cos = Re<J_fno,J_true> / (||J_fno|| ||J_true||)           DIRECTION (real-valued)
+  alpha* = Re<J_fno,J_true> / ||J_fno||^2                   best REAL rescale
+  resid  = ||alpha* J_fno - J_true|| / ||J_true||            scale-corrected error
+```
+
+Two closed-form identities connect these to the number we already had:
+```
+  resid^2 = 1 - cos^2                       (optimal-rescale residual)
+  raw^2   = r^2 + 1 - 2 r cos               (raw response_error, exact)
+```
+The second identity is the important one: it proves (r, cos) are not a new
+metric but an exact decomposition of the metric we've been reporting so far — every raw number in this README is reproducible from its (r,cos).
+
+**Real alpha** / **real cos**, deliberately (not complex): `response_error` already establishes there is no U(1) phase freedom here: `J_fno` and
+`J_true` are derivatives of forwards that share the solver's fixed phase
+convention, so a global-phase mismatch is a genuine error, not a harmless
+gauge choice. A complex alpha would re-absorb that phase and falsely report
+a phase-wrong Jacobian as "aligned" — it would flatter the model. Taking `Re`
+keeps the decomposition honest to the metric it decomposes.
+
+Worse-than-random-init threshold (derived, not fit): `raw > 1` (worse than a
+random-init Jacobian, whose response_error = 1 by construction) iff
+```
+    r^2 + 1 - 2r cos > 1  <=>  r > 2 cos
+```
+Note this can **only** be triggered by scale: at `r=1` (perfectly scaled), `r > 2cos`
+requires `cos < 0.5` — heavy misalignment. Small-N checkpoints instead cross
+via scale: `r` rises well above 1 while `cos` is only moderately poor;
+"worse than noise" is a **scale** pathology (over-confident sensitivity), not
+primarily a direction one.
+
+### Architecture
+Four pure-linalg functions appended to `src/responses.py` (zero training,
+zero new dependencies): `frob_inner`, `scale_ratio`, `cosine_alignment`,
+`optimal_rescale`. All operate on materialized `(nx,nx)` Jacobians already
+produced by `jacobian_fno` / `jacobian_true` / `mode_coupling_matrix` — no new
+differentiation, no new solver calls.
+
+### Bugs fixed in this stage
+1. `optimal_rescale` / `cosine_alignment` must take `jnp.real(...)` of the inner
+   product. Forgetting this doesn't crash — it silently produces a complex
+   or inflated alignment that hides phase error as scale-fixable. Caught by
+   design, not by a runtime error.
+3. Aggregation trap: `raw^2 = r^2+1-2r*cos` is a per-sample identity. Because
+   it's nonlinear, `mean(raw) != sqrt(mean(r)^2 + 1 - 2*mean(r)*mean(cos))`.
+   All tables in this section report mean-of-per-sample-raw, matching
+   existing convention.
+
+### Validation Gates
+* Gate (a) [synthetic]: `resid == sqrt(1-cos^2)` on random complex matrices,
+  `|diff| = 0.00e+00` (bit-identical).
+* Gate (b1) [synthetic, parallel]: `B = c*A (real c>0) -> cos=1.000000000000`,
+  `resid=1.29e-16`. Confirms `cos=1` iff true proportionality.
+* Gate (b2) [synthetic, phase]: `B = i*A` (pure 90-degree global phase, nothing
+  else wrong) -> `cos=5.33e-19, resid=1.000000000000`. This is the real-alpha
+  design in action: a complex-alpha metric would score this pair as
+  cos~1/resid~0 ("aligned"); ours correctly scores it as maximally
+  misaligned. 
+* Gate (c) [synthetic, invariance]: `cos` and `resid` are identical in position
+  space vs `(k,q)` mode space (`|diff| ~1e-18`).
+* Gate (real data, `seed0 M16 lambda=0`): `resid==sqrt(1-cos^2)` to `4.9e-15`;
+  `raw==sqrt(r^2+1-2r*cos)` to `5.4e-15`; raw matches the frozen per-sample
+  cache (`fno_errs_200_f64trained.npy`) at `0.00e+00`, mean `0.5787` (locked).
+
+All four synthetic gates plus the three real-data gates ran before any
+interpretation — synthetic gates specifically ran before the pre-registration
+was written, so no real `(r,cos)` number was seen before predictions were locked.
+
+### Results
+
+* Scale is not pinned by forward accuracy: Predicted `r~1` at `N=2000/lambda=0` (forward
+      training pins Jacobian scale). A forward-accurate
+      `M16` (`rel-L2 ~0.019`) is 14-15% over-energetic in its response
+      Jacobian — it believes `psi` is more sensitive to `V` than it truly is.
+
+* Direction dominates, scale is not negligible: Optimal rescale of `M16/lambda=0/N2000` only recovers
+      `resid=0.504` from `raw=0.579` (13% improvement) — nowhere near the
+      falsifier (`resid<0.45`). Failure is predominantly directional
+      (`cos=0.862`, i.e. ~30 degrees of alignment error), but the 13% is a
+      real, non-negligible scale contribution — more than the <7% predicted.
+
+* Capacity affects both axes: `M16` vs `M12`, `lambda=0, N2000, 4-seed`, no overlap on both:
+  ```
+       r:   M16 1.149+/-0.005  vs  M12 1.011+/-0.008   (gap 0.124-0.138)
+       cos: M16 0.859+/-0.003  vs  M12 0.965+/-0.007   (gap 0.095-0.10)
+  ```
+  `M12`'s raw error is almost pure misalignment (`r~1.01`, resid~raw,
+      rescaling buys almost nothing). Extra spectral capacity (`M16`) adds a
+      genuine scale defect on top of a worse directional one — capacity
+      degrades response fidelity on both axes, not one.
+
+* DINO repairs both axes:
+  ```
+        lambda    r                cos
+        0         1.149 +/-0.005   0.859 +/-0.003
+        0.1       0.9946+/-0.0008  0.9941+/-0.0002
+        10        0.9977+/-0.0004  0.9982+/-0.0001
+  ```
+  Derivative supervision recalibrates scale (`1.15 -> ~1.00`) and
+      realigns direction (`0.86 -> 0.99+`) simultaneously. 
+      > Caveat: at these
+      low raw-error levels, high cos is partly arithmetically forced
+      (`resid=sqrt(1-cos^2)<=raw` caps how low `cos` can be) — the genuinely
+      informative, non-forced part of this result is `r` returning to ~1.
+
+* 3-seed across N:
+```
+        N       r                cos              raw (canonical)
+        250     1.4203+/-0.018   0.6076+/-0.007   1.140
+        500     1.3644+/-0.015   0.6838+/-0.008   1.000
+        1000    1.2719+/-0.007   0.7627+/-0.005   0.824
+        2000    1.1486+/-0.005   0.8588+/-0.003   0.587
+```
+`cos` rose from `0.608` to `0.859` (64% of its gap to 1 closed) — not modest, and it crossed above `0.85`. Gap-to-perfect for both axes:
+```
+        N       r-1      1-cos
+        250     0.420    0.392
+        500     0.364    0.316
+        1000    0.272    0.237
+        2000    0.149    0.141
+```
+Both close `~64-65%` of their gap over this N range, in lockstep, with
+      `r-1` consistently slightly above `1-cos` (scale a touch more stubborn).
+      More data buys scale and direction together at roughly equal
+      fractional rate, not scale-first as previously assumed.
+
+
+* DINO across N:
+```
+        N       r (lam0.1)        cos (lam0.1)
+        250     0.9510+/-0.0016   0.9382+/-0.0042
+        500     0.9709+/-0.0013   0.9730+/-0.0012
+        1000    0.9864+/-0.0012   0.9877+/-0.0006
+        2000    0.9946+/-0.0008   0.9941+/-0.0002
+```
+Qualitatively different failure shape from forward-only: DINO is
+      slightly under-energetic (`r<1` throughout, not over-energetic like
+      forward-only) and its two gaps are nearly equal at every `N`
+      (`1-r ~ 1-cos`, e.g. `N250: 0.049 vs 0.062`) — direct derivative
+      supervision balances scale and direction, whereas forward-only
+      training leaves scale the more ragged of the two. This is the
+      geometric explanation for the data-efficiency chasm (DINO
+      `N250 raw=0.336` beating forward-only `N2000 raw=0.587`): **DINO's
+      Jacobian is better-conditioned on both axes at a fraction of the data**.
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/0329248c-3877-4592-b641-3867db9f7c36">
+    </td>
+   
+  </tr>
+ <tr>
+    <td align="center">
+      <img src="https://github.com/user-attachments/assets/92687efe-2bf1-46d6-a858-b2cbcf082c69">
+    </td>
+  </tr>
+</table>
+
+---
 ## Scope cuts 
 * Norm-violation penalty as an active loss term — logged as a passive diagnostic throughout (and it improves under DINO as a side effect), but never tested as its own supervised arm. Would need to be a separate ablation to avoid confounding attribution with the derivative-matching term.
 * Warmup necessity — used throughout (50 epochs, held fixed across the λ sweep) as a stability precaution; never ablated against warmup-off, since nothing diverged at any tested λ and there was no empirical pressure to isolate it.
 * Burgers cross-check — dropped in favor of OOD as the stronger second leg; state-to-state vs parameter-to-state confound would need its own solver-differentiability gate and was judged not worth the risk.
 * The capacity-bias mean "why": which member does forward-training's implicit bias select at higher capacity, and why is it worse in Jacobian? Testing it properly needs loss-landscape curvature in Jacobian-active directions, or trajectory-divergence diagnostics (which are ill-defined for an endpoint map that produces no trajectory).
+* Principal-angle / SVD subspace comparison (left vs right singular vectors).
 
 ---
 ## References
