@@ -71,7 +71,21 @@ Per-sample decorrelation    Pearson r = 0.107 (p=0.13), Spearman rho = 0.097 (p=
 Flatness (median split)     Born +0.463 (0.419 -> 0.882) ; FNO +0.016 (0.571 -> 0.586) -> 29x flatter
 On perturbative half        FNO (0.571) WORSE than Born (0.419)
                             -> kills "FNO = perturbation theory + corrections"
- 
+All seed0 results. 
+Amendment: not a statistical tie. 
+mean diff 0.0719 | median diff 0.0109 | frac born>fno 0.52
+t 3.37 | Wilcoxon p 3.26e-02
+
+What this means: 
+- FNO significantly better on average
+- FNO beats Born on 52% of samples — essentially a coin flip
+
+The FNO's Jacobian is significantly better than first-order perturbation theory in mean (paired t: Δ=0.072, p≈0.001) 
+but the advantage is tail-driven — median Δ=0.011, and the FNO wins on only 52% of samples (Wilcoxon p=0.03). 
+On a typical potential, the two are statistically even; the FNO's edge is that it avoids 
+Born's catastrophic failures rather than being uniformly more accurate.
+
+
 ================================================================
 6. MECHANISM — off-band hypothesis FALSIFIED, f64, 3-seed   [CANONICAL]
 ================================================================
