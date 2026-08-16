@@ -109,7 +109,7 @@ Norm-violation tracks forward error rather than vanishing on its own. The residu
 * **Norm-violation as a passive observable**: This is a thesis commitment, not an oversight. Penalizing norm-violation would answer a different question — "can an FNO be trained to conserve norm?" (trivially yes; that is engineering) — and would destroy the emergence result by making norm-violation a tuned input rather than a measured output. Forward-only training answers the scientific question: "does norm conservation emerge from accuracy alone?" The diagnostic rides in `eval_step` and is logged every epoch as a first-class metric because its trajectory is a result.
 
 
-## Infrastructure 
+### Infrastructure 
 
 All new code lives in `scripts/train.py` (functions reused by every later phase) and `scripts/probe.py` (disposable). Run from repo root as `python -m scripts.train` / `python -m scripts.probe`.
 
