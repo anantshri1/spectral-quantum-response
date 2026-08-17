@@ -51,40 +51,44 @@ Variance collapse lambda=0 -> lambda=10 : std 0.026-0.029 -> 0.0017  (~16x)
 ================================================================
 lambda    forward    response   recovered
 0         0.0187     0.573      41.3%      [4-seed, canonical]
-0.1       0.0168     0.103      89.7%      [PROVISIONAL — fewer seeds than 0 / 10]
+0.1       0.0168     0.104      89.6%      [4-seed, canonical, backfilled]
 1         0.0144     0.073      92.8%      [PROVISIONAL — fewer seeds]
 10        0.0136     0.0571     94.3%      [4-seed, canonical]
 No Pareto tradeoff: forward IMPROVES monotonically with lambda, never degrades.
 "% recovered" := 1 - err  (linear rescale of relative Frobenius error;
                             NOT variance-explained — label once as a definition.)
- 
-  [DECISION #2 — lambda=0.1 and lambda=1 are lower seed-count than the endpoints.
-   Either (a) mark them provisional in the paper, or (b) backfill to 4 seeds.
-   Not more lambda points (Fable's "do not add") — just seed parity. Low priority.]
- 
+ [DECISION #2 — CLOSED for lambda=0.1: backfilled to 4 seeds (seed3 = raw 0.1058,
+  r 0.9935, cos 0.9938). N2000 cell now 0.1040 +/- 0.0019 (was 3-seed 0.1034).
+  lambda=1 REMAINS 3-seed/provisional — not load-bearing, out of scope. This was
+  seed parity, not new lambda points.]
 ================================================================
-5. BORN BASELINE, f64, 200 SAMPLES   [CANONICAL]
+5. BORN BASELINE, f64, 200 SAMPLES   [CANONICAL]   (all seed0, per-sample)
 ================================================================
 Born mean response error   0.651   (std 0.299, median 0.602, range [0.108, 1.534])
-FNO forward-only floor      ~0.58   -> STATISTICAL TIE with Born
+FNO forward-only floor      ~0.58   (seed0 mean 0.5787; 4-seed canonical floor 0.573, see §2)
 Per-sample decorrelation    Pearson r = 0.107 (p=0.13), Spearman rho = 0.097 (p=0.17)
 Flatness (median split)     Born +0.463 (0.419 -> 0.882) ; FNO +0.016 (0.571 -> 0.586) -> 29x flatter
 On perturbative half        FNO (0.571) WORSE than Born (0.419)
                             -> kills "FNO = perturbation theory + corrections"
-All seed0 results. 
-Amendment: not a statistical tie. 
-mean diff 0.0719 | median diff 0.0109 | frac born>fno 0.52
-t 3.37 | Wilcoxon p 3.26e-02
 
-What this means: 
-- FNO significantly better on average
-- FNO beats Born on 52% of samples — essentially a coin flip
+--- FINDING (paired test, seed0: born_errs_200 vs fno_errs_200_f64trained) ---
+NOT a statistical tie. FNO significantly better in MEAN, but the edge is TAIL-DRIVEN:
+  mean diff   0.0719   (paired t = 3.37, p ~ 0.001)   -> FNO better on average
+  median diff 0.0109   (Wilcoxon p = 3.26e-02)        -> near-zero typical gap
+  frac born>fno = 0.52                                -> FNO wins 52% ~ coin flip
+Bulk vs tail (this IS the perturbative-half line above): Born is competitive-to-
+  BETTER in the perturbative bulk (0.419 vs 0.571) and catastrophic in the tail
+  (up to 1.534); FNO's entire mean advantage is avoiding those tail blowups, not
+  being uniformly more accurate. Different failure modes (representational vs
+  perturbative), not a tie -- consistent with the r~0.1 decorrelation above.
+Paper sentence: "FNO's Jacobian beats first-order perturbation theory in mean
+  (Delta=0.072, p~0.001) but the advantage is tail-driven -- median Delta=0.011,
+  FNO wins 52% of samples (Wilcoxon p=0.03). On a typical potential the two are
+  statistically even; FNO's edge is avoiding Born's catastrophic failures."
 
-The FNO's Jacobian is significantly better than first-order perturbation theory in mean (paired t: Δ=0.072, p≈0.001) 
-but the advantage is tail-driven — median Δ=0.011, and the FNO wins on only 52% of samples (Wilcoxon p=0.03). 
-On a typical potential, the two are statistically even; the FNO's edge is that it avoids 
-Born's catastrophic failures rather than being uniformly more accurate.
-
+[RETRACTED 2026-08-17 (Decision #3): the earlier line "FNO ~0.58 -> STATISTICAL
+ TIE with Born" is FALSE, superseded by the paired test above. "Tie" hands a
+ reviewer a free "your own numbers contradict you." Logged, not reshaped.]
 
 ================================================================
 6. MECHANISM — off-band hypothesis FALSIFIED, f64, 3-seed   [CANONICAL]
@@ -126,12 +130,22 @@ DINO at N=250 (0.336) BEATS forward-only at N=2000 (0.587). Gap WIDENS with N.
 Both curves still falling at N=2000 -> report measured gap, NOT convergence.
 lam=0 N<=500 sits above the 1.0 random-init floor (over-energetic misaligned Jacobian).
 
-At the same 2000 samples, forward-only reaches response 0.587 and hasn't converged; DINO reaches 0.103 (λ=0.1) or 0.057 (λ=10). 
-So this curve becomes the baseline that quantifies DINO's data-efficiency: derivative supervision buys ~5.7–10× lower 
-response error at matched data, and forward-only would need far more data — an extrapolation of the observed trend 
-puts reaching DINO's λ=0.1 level somewhere around 10⁴–10⁵ samples, but I'd only cite the measured 5.7× at N=2000 and 
-call the rest illustrative, because we can't pin the asymptote. Reframed claim: you can buy response fidelity with forward data, 
-but at a data cost so large that supervision is dramatically cheaper.
+Data-efficiency reading (measured, THIS sweep): at N=2000, forward-only 0.587 vs
+DINO lam=0.1 0.103 -> 5.7x lower response error at MATCHED data. 5.7x is the citable
+headline (both arms were swept across N here).
+[The larger ~10x (0.587 vs lam=10's 0.0571) is NOT from this sweep -- lam=10 ran
+only at N=2000 in §3, a different leg. Cross-ref it as such; do NOT present 5.7x
+and 10x together as if both came from the vsN sweep.]
+Forward-only decrements are GROWING per doubling (-0.14, -0.18, -0.24), not shrinking,
+so there is NO basis to extrapolate a crossing N. The old "~10^4-10^5 samples to reach
+DINO's level" estimate is CUT: extrapolating a growing-decrement curve is unsupported.
+Reframed claim (safe): forward data CAN buy response fidelity, but at a data cost so
+large that derivative supervision is dramatically cheaper -- quantified as the measured
+5.7x at N=2000, no asymptote claimed.
+
+Provenance cross-refs (N2000 cells, since the curve is held 3-seed apples-to-apples):
+lam=0   0.587 here is 3-SEED (matches lam=0.1 vsN coverage); 4-SEED canonical = 0.573 (§2).
+lam=0.1 0.1034 here is 3-SEED; 4-SEED cell = 0.1040 +/- 0.0019 (§4, seed3 backfilled).
 
 ================================================================
 10. RESPONSE — JACOBIAN ALIGNMENT DECOMPOSITION (r, cos), f64   [CANONICAL]
@@ -139,11 +153,11 @@ but at a data cost so large that supervision is dramatically cheaper.
 Decomposition: raw^2 = r^2 + 1 - 2*r*cos  (exact identity, r=scale, cos=direction)
 Threshold: raw > 1 (worse than random-init) iff r > 2*cos  (derived + confirmed)
 
---- lambda=0, M16 vs M12, N2000, 4-SEED (M16 3-seed for lam0.1 row) ---
+--- lambda=0, M16 vs M12, N2000, 4-SEED (all rows 4-seed; seed3 backfilled, lam0.1) ---
 config          r                  cos                resid (rescaled)
 M16 lambda=0    1.149 +/- 0.005    0.859 +/- 0.003     0.504 (seed0)
 M12 lambda=0    1.011 +/- 0.008    0.965 +/- 0.007     0.242 (seed0)
-M16 lambda=0.1  0.9946+/- 0.0008   0.9941+/- 0.0002    0.103 (seed0)
+M16 lambda=0.1  0.9943+/- 0.0008   0.9940+/- 0.0002    0.103 (seed0)
 M16 lambda=10   0.9977+/- 0.0004   0.9982+/- 0.0001    0.057 (seed0)
 No-overlap gaps (M16 vs M12, lambda=0): r-gap 0.124-0.138, cos-gap 0.095-0.10
   -> capacity liability lives on BOTH axes; M12 is nearly scale-clean (r~1.01).
@@ -157,7 +171,10 @@ N       r                  cos               raw (matches Sec.9-vsN Task A)
 Gap-to-perfect closes ~64-65% (both axes) from N250->N2000, IN LOCKSTEP
 (r-1 slightly > 1-cos throughout -> scale marginally more stubborn).
 r>2cos threshold crosses raw=1 at N~500 (r=1.364, 2cos=1.368) -- matches
-measured raw=1.000 at N500. Independent validation of the decomposition.
+measured raw=1.000 at N500. This is a SELF-CONSISTENCY / code-correctness gate:
+raw^2 = r^2+1-2rcos is an identity, so r>2cos <=> raw>1 holds BY CONSTRUCTION.
+It confirms the pipeline computes r, cos, raw mutually consistently -- it is NOT
+independent validation of the mechanism (a reviewer would call that a tautology).
 
 --- lambda=0.1 (DINO), M16, ACROSS N, 3-SEED ---
 N       r                  cos
@@ -178,7 +195,9 @@ scale-dominant profile.
    i*A synthetic gate: complex-alpha would score a pure 90-deg phase error
    as cos~1 (aligned); real-alpha correctly scores it cos~0 (orthogonal).]
 
-  [3-seed vsN caveat: lambda=0.1 vsN leg (Task A original) has no seed3 --
-   both vsN tables above are 3-seed. N2000 rows of both tables are
-   provenance-gated against the 4-seed align_seed*.npz files at the seed0-2
-   overlap and match to float precision.]
+  [Seed provenance: the two vsN TRAJECTORY tables are held at 3-seed (0-2) on
+  purpose -- apples-to-apples slope across N. The N2000/M16 CONFIG cells (first
+  table) are 4-seed: align_seed{0..3}_*.npz now includes seed3 for lam0, lam0.1
+  (backfilled), lam10. So N2000/lam0.1 reads 3-seed (0.9946/0.9941) in the
+  trajectory table and 4-seed (0.9943/0.9940) in the config table -- both correct,
+  tag which is which.]
