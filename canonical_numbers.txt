@@ -233,3 +233,26 @@ Sharpening: DINO training itself CONSUMES J_true-JVP evaluations (the ||J_fno·v
 J_true·v|| targets), so the exact operator is a training-time PREREQUISITE, not
 something the surrogate obviates. Forward-only needs no J_true but is response-wrong
 -> you cannot escape the exact operator AND get response fidelity for free.
+
+================================================================
+12. LINEARIZED VALIDITY RADIUS, f64, seed0, 20 samples x 4 dirs   [CANONICAL]
+================================================================
+Metric: err_J(eps) = ||dpsi_true - eps*(J.dV)|| / ||dpsi_true||,
+  dpsi_true = solver(V+eps*dV) - solver(V); dV unit-norm Gaussian (fd_check conv);
+  J.dV via jax.jvp. All J vs the SAME solver truth (pure Jacobian test). ||V||~19.2.
+
+eps* (largest eps with mean err < tol):
+  operator        0.05     0.10     0.15     0.20
+  J_true          >1       >1       >1       >1      <- true dynamics near-linear to eps>1
+  J_fno lam0      <1e-4    <1e-4    <1e-4    <1e-4   <- NO valid regime at ANY eps
+  J_fno lam0.1    <1e-4    <1e-4    >1       >1      <- valid only if tol > ~0.11 plateau
+
+WHY FNO CURVES ARE FLAT: in the true-linear regime dpsi_true ~ eps*(J_true.dV), so eps
+  CANCELS in the ratio -> err_J -> ||(J_true-J).dV||/||J_true.dV||, eps-INDEPENDENT.
+  J_true: that term = 0 -> residual is O(eps) nonlinearity -> slope-1 diagonal.
+  J_fno : nonzero constant (~0.63 lam0, ~0.11 lam0.1) -> FLAT plateau.
+INTERPRETATION: FNO response error is SCALE-INVARIANT in eps -- representational, not a
+  linearization artifact (which would vanish as eps->0, as J_true's does). No perturbation
+  is small enough to make J_fno valid. J_true eps*>1 kills "linearization is hard here".
+X-check: lam0 plateau ~0.63 ~ Frobenius floor 0.573 (directional avg, O(1) weighting). OK.
+Artifacts: results/fig_validity_radius.png ; results/eps_sweep_arrays.npz
