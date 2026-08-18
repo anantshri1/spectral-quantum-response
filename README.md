@@ -842,6 +842,136 @@ Qualitatively different failure shape from forward-only: DINO is
 </table>
 
 ---
+## Current Phase of Repo: Canonical Housekeeping, Seed Backfill, Timing Amortization, and Linearized Validity Radius
+This phase closed all outstanding experimental and record-keeping items. No new architectural ideas were introduced; the work was provenance hardening, honest amortization framing, and one new quantitative figure (the ε-sweep). The session produced four new canonical sections (§9 hygiene, §10 provenance update, §11 timing, §12 validity radius).
+
+### Canonical Housekeeping
+#### The Born Baseline
+**Background**. The Born approximation is the leading-order perturbative expression for the response operator. Born treats the potential as a weak perturbation acting once (`δψ_T ≈ -i∫₀ᵀ U₀(T,t)·δV·U₀(t,0)·ψ₀ dt` with `U₀` the free propagator), whereas the true response includes all-order rescatterings. For strongly coupled or long-time dynamics, Born fails badly; for weak/short-time regimes, it is competitive. This makes it a useful baseline: it represents perturbation theory's best answer, not a trivially bad benchmark.
+
+Paired test (`seed0, born_errs_200.npy vs fno_errs_200_f64trained.npy`, 200 samples):
+
+* Mean diff: `0.0719 (paired t=3.37, p≈0.001)` — FNO significantly better in mean.
+* Median diff: `0.0109 (Wilcoxon p=0.033)` — near zero.
+* FNO wins on 52% of samples — essentially a coin flip.
+
+*Why this is not a tie, and why "statistical tie" was the wrong framing*. The t-test and Wilcoxon give different signals because the two tests weight the distribution differently. The t-test is sensitive to the mean, which is pulled by Born's catastrophic tail (`max error 1.534, std 0.299`). The Wilcoxon compares medians/ranks and ignores those extremes. The gap between `p≈0.001 (t)` and `p≈0.03 (Wilcoxon)` is the finding: Born is competitive-to-better in the perturbative bulk (median split: Born easy-half `0.419` vs FNO `0.571` — the FNO is actually worse on potentials where perturbation theory works) and fails catastrophically on the tail. The FNO's entire mean advantage comes from avoiding those tail blowups, not from being uniformly superior. 
+
+> "FNO beats first-order perturbation theory in mean (Δ=0.072, p≈0.001) but the advantage is tail-driven — median Δ=0.011, FNO wins 52% of samples (Wilcoxon p=0.03). On a typical potential the two are statistically even; the FNO's edge is avoiding Born's catastrophic failures rather than being uniformly more accurate."
+
+Born and the FNO represent different failure modes (perturbative breakdown vs. representational error), which is consistent with the near-zero Pearson `r=0.107` per-sample decorrelation — they fail on different samples, not the same ones.
+
+#### Seed-3 Backfilling
+*Why.* `λ=0.1` became integral in two new sections (response-vs-N curve and §10 alignment trajectory) with only 3 seeds, while all comparator conditions (`λ=0, λ=10`) ran 4 seeds. Training cost is low (one run); provenance value is high.
+
+`4-seed N2000 / M16 / λ=0.1` results:
+
+|quantity|	3-seed (was)|	4-seed (now)|
+|-|-|-|
+|response error|	0.1034 ± 0.0017	|0.1040 ± 0.0019|
+|r|	0.9946 ± 0.0008|	0.9943 ± 0.0008|
+|cos	|0.9941 ± 0.0002|	0.9940 ± 0.0002|
+
+Numbers barely moved (`seed3 raw=0.1058, r=0.9935, cos=0.9938` — squarely in-family). The 3-seed estimates were reliable; the 4-seed values are now authoritative.
+
+### Sharpening `PREREG_TASKB.txt` 
+
+`PREREG_TASKB.txt` already contained two dated post-data amendments, written contemporaneously after `seed0` results. These were correct and retained; the session added the formal verdict block after verifying the 4-seed results. **Key correction**: an earlier scaffold had called P-B4 "FALSIFIED, scale-dominant" — this was wrong, and a [CORRECTION 2026-08-17] marker records it. The correct attribution (one-at-a-time from M12 baseline):
+
+* Direction-only change (`cos 0.965→0.859`): `raw 0.257→0.534, Δ=+0.277`
+* Scale-only change (`r 1.011→1.149`): `raw 0.257→0.319, Δ=+0.062`
+* Direction contributes `~4.5×` the scale term → direction-dominant, exactly as predicted.
+
+**Final verdicts:**
+
+* P-B1 [HELD core / scale sub-claim reworded]. "Forward training pins scale, `r∈[0.9,1.1]`" — `r=1.149` exceeds the predicted band, and rescaling helps `~11%` not `<7%` as predicted. Core directional claim holds (`resid=0.512, cos=0.859` near predicted range). Hard falsifier (`r outside [0.85,1.15]`) did not fire; scale is a real secondary contributor, not the dominant story.
+* P-B2 [FALSIFIED substantively]. "Decline carried mostly by `r` descending; `cos` rises modestly, stays `<0.85` at `N2000`; forward buys scale faster than direction." Actual: `cos` closed `64%` of gap-to-perfect, `r-1` closed `65%` — near-lockstep, not r-dominant. The hard falsifier (`cos>0.90`) was too loose to catch `cos=0.859`; logged as a falsifier-specification error on top of the substantive miss.
+* P-B3 [HELD (r in-band) / "moves cos not r" reworded]. `r` stays in `[0.9,1.1]` under DINO (`r=0.994/0.997`). "DINO moves cos not r" is wrong: DINO repairs both axes (`r 1.149→0.994, cos 0.859→0.994`). And `r<1` — DINO over-corrects scale to under-energetic, opposite sign from `λ=0`'s `r>1`.
+* P-B4 [HELD direction-dominant / "both r~1, not scale" amended]. Direction-dominant attribution confirmed by one-at-a-time analysis above. "Both `r~1`" wrong: `|dr|=0.138` (just under the 0.15 falsifier), a real secondary scale inflation. M12's scale-cleanness (r≈1.01) is the crisp discriminator; it does not make scale the dominant error source in M16.
+
+<p align=center>
+ <img width="686" height="600" alt="image" src="https://github.com/user-attachments/assets/40a7b6a0-6d8d-4c46-9256-b062e5d4343c" />
+</p>
+
+### Timing and amortization table
+**Infrastructure:** `scripts/timing_table.py`. 
+
+> **`JAX` timing trap #1** — asynchronous dispatch. `JAX` operations do not run when you call them. They dispatch work to the `XLA` runtime and return a future (a not-yet-materialized array) to Python immediately. The Python line finishes in `~0.05 ms` whether the computation takes 1 µs or 1 s, because Python only queued the work. To time the actual computation, you must call `jax.block_until_ready(result)` before stopping the clock — this forces Python to wait for the device to finish. Demonstrated empirically: `J_true` dispatch-only `0.04–0.06 ms`, `J_true` blocked `222–241 ms`, ratio `~3600–6000×`. Every timing harness that omits `block_until_ready` produces fiction.
+
+> **`JAX` timing trap #2** — compilation warmup. The first call to a `jax.jit`-ted function traces the Python function and compiles it with `XLA` — this compile step can take `10–1000×` the steady-state runtime. All timing harnesses must call the function at least once (blocked, to absorb both traps) before starting the clock. The bench function uses `warmup=3` compile-absorbing calls followed by `reps=50` timed calls, taking the median. (Aside: `async` dispatch is a feature in production — Python can queue the next operation while the device is still running the previous one, overlapping them. `block_until_ready` is only for measurement boundaries and `np.asarray` calls.)
+
+**Why demo (240 ms) ≠ table (121 ms) for `J_true`.** The demo was a single blocked call right after compile — cold cache, CPU frequency not yet ramped up to max turbo. The table is the median of 50 steady-state calls. `121 ms` is the number to trust; 240 was a cold single-shot. This is expected on CPU (`JAX` on Apple Silicon uses the CPU backend) and is why median-of-many is mandatory.
+
+> Bug: `uT` shape. Gate B compared `solve(p,v) (complex (128,))` against `uT[0] (shape (128,2)`, the real/imaginary two-channel layout from `load_split)`. The subtraction raised a broadcast error. Fix: `ut0 = ut0[:,0] + 1j*ut0[:,1]` before computing norm. Lesson: `load_split` returns `uT` as `(N, nx, 2)` real, matching the FNO's `(nx,2)` output contract, not as a complex vector.
+
+**Results** (f64, seed0, CPU, median of 50, block_until_ready):
+
+|operation|	median (ms)|	IQR (ms)|
+|-|-|-|
+|solver forward (`psi_T`)	|2.25	|[2.19, 2.34]|
+|FNO forward (`psi_T`)|	0.26	|[0.25, 0.26]|
+|`J_true` (128 `JVP`s / `scan`) |	121.5	|[117.6, 134.7]|
+|`J_fno` (128 `JVP`s / `net`)|	15.7	|[14.6, 17.8]|
+
+Forward surrogate speedup: `8.8×`. Response surrogate speedup: `7.7×`. Internal consistency check: `J_true` costs `~54×` its own forward pass `(121.5/2.25)`; `J_fno` costs `~61× (15.7/0.26)`. Both Jacobians pay the same `jacfwd-over-128-dim` overhead — the response speedup essentially inherits the forward speedup, it is not an independent effect.
+
+**Amortization / break-even**. The deployable model is `λ=0.1` DINO (the response-accurate one). Training wall-clock: `~13–16 min`. The `λ=0` forward-only model trains in `~3–5 min`, but its Jacobian is response-wrong (floor 0.573) — citing its cheaper training time to justify a response-operator speedup would be quoting the cost of a model that does not deliver the claimed product.
+
+Break-even `n* = T_train / saving, where saving = t_Jtrue − t_Jfno = 0.106 s/query`:
+
+|`T_train`|	`n*`|	× testbed (200 queries)|
+|-|-|-|
+|13 min (780 s)|	~7,400|	~37×|
+|16 min (960 s)|	~9,100	|~45×|
+
+The whole testbed's `J_true` costs `200 × 121.5 ms = 24.3 s`. One training run is minutes. Training the surrogate once already costs more than computing the exact response for every available sample. The `7.7×/query` win is real but never amortizes at `n=200`.
+
+### Linearized validity radius ε-sweep
+**What it measures**. For perturbation `V → V + ε·δV` with `‖δV‖=1`, first-order theory predicts `Δψ_T(ε) ≈ ε·J·δV`. The metric is:
+
+```
+err_J(ε) = ‖Δψ_true(ε) − ε·J·δV‖ / ‖Δψ_true(ε)‖
+```
+
+where `Δψ_true(ε) = solver(V+εδV) − solver(V)` is always the solver-truth change. All three operators `(J_true, J_fno λ=0, J_fno λ=0.1)` are judged against the same solver truth — a pure test of operator quality, not forward accuracy. The alternative (using the FNO's own forward output as the "truth") would conflate `~2%` forward error with response error and muddy the plateau. Unit-norm Gaussian `δV`, matching the `fd_check` house convention.
+
+**ε grid**: `logspace(−4, 0, 17)`. The `1e-4` floor is deliberate: below it, the `O(ε²)` curvature signal in `Δψ_true` drowns in f64 cancellation noise (the left wall of the finite-difference valley). The grid stays right of that wall.
+
+**Gate (`seed0, ε=1e-4, 1 direction`)**. Confirmed machinery: `err_Jtrue = 7.62e-7 (linear regime), err_Jfno0 = 0.633 (plateau)`. `J_true`'s gate residual was `~130×` smaller than the conservative estimate of `~1e-4` — meaning the true TDSE dynamics are far more linear in `V` at unit-`δV` scale than anticipated. This sharpens the figure: linearization is easy in this system, so the FNO's flatness cannot be attributed to the dynamics being fundamentally nonlinear.
+
+Full sweep: `20 samples × 4 directions × 17 ε` values. All checkpoints `seed0`.
+
+Results (mean ± std across 80 (sample, direction) pairs):
+
+|operator|	validity radius ε* at tol=0.05|	tol=0.10|	tol=0.15	|tol=0.20|
+|-|-|-|-|-|
+|`J_true`|	>1	|>1|	>1|	>1|
+|`J_fno λ=0`|	<1e-4	|<1e-4	|<1e-4|	<1e-4|
+|`J_fno λ=0.1`|	<1e-4|	<1e-4|	>1|	>1|
+
+`‖V‖ ≈ 19.2`, so `ε>1` means perturbations smaller than the potential itself are already large enough to violate linearization for a wrong operator — further reinforcing that the issue is representational.
+
+**Why the FNO curves are exactly flat (the physics)**. In the regime where `J_true` has `ε*>1`, the true dynamics are near-linear: `Δψ_true(ε) ≈ ε·J_true·δV + O(ε²)` with negligible O(ε²). Substituting into the metric:
+```
+err_J(ε) = ‖ε·J_true·δV − ε·J·δV + O(ε²)‖ / ‖ε·J_true·δV + O(ε²)‖
+         → ‖(J_true − J)·δV‖ / ‖J_true·δV‖    as ε → 0
+```
+
+`ε` cancels top and bottom — both the prediction error and the true change scale linearly with `ε`, so their ratio is `ε`-independent. It collapses to a pure operator-level quantity (directional relative error of `J` vs `J_true`) with no `ε` dependence:
+
+* `J_true`: the leading term vanishes exactly → residual is `O(ε)` nonlinearity only → slope-1 rising diagonal. This is why `err_Jtrue ∝ ε`.
+* `J_fno`: nonzero constant (`~0.63 for λ=0, ~0.11 for λ=0.1`) → flat plateau. The plateau lifts only when `ε` grows large enough that the `O(ε)` nonlinearity catches up to the plateau — which, given `ε*>1` for `J_true`, doesn't happen in the grid.
+
+The flatness is a stronger statement than the scalar Frobenius response error alone: not just *"J_fno is off by 0.57 on average," but "J_fno is off by a fixed, ε-independent margin at every perturbation scale — there is no small-ε regime where it becomes valid."* Shrinking the perturbation does not help, because the error is representational (wrong operator), not a linearization artifact (which would vanish as `ε→0`, as `J_true`'s does). Cross-check: `λ=0 plateau ~0.63` ≈ the Frobenius floor `0.573` (directional average, O(1) weighting) — internally consistent.
+
+> Born consistency note. The `ε`-sweep result (`err_Jtrue ≈ 7.6e-7` at `ε=1e-4`, validity radius `>1`) does not contradict the Born baseline (Born mean `0.651`). These measure different things: the sweep says the exact Jacobian linearizes the dynamics; Born says the analytic approximation to that Jacobian (first-order perturbation theory) is inaccurate. `J_true ≠ Born`. The map is near-linear; Born simply has the wrong linear coefficient.
+
+
+<p align=center>
+<img width="660" height="500" alt="image" src="https://github.com/user-attachments/assets/a1562789-b3ed-4b88-81a6-8cb29e068f54" />
+</p>
+
+---
 ## Scope cuts 
 * Norm-violation penalty as an active loss term — logged as a passive diagnostic throughout (and it improves under DINO as a side effect), but never tested as its own supervised arm. Would need to be a separate ablation to avoid confounding attribution with the derivative-matching term.
 * Warmup necessity — used throughout (50 epochs, held fixed across the λ sweep) as a stability precaution; never ablated against warmup-off, since nothing diverged at any tested λ and there was no empirical pressure to isolate it.
