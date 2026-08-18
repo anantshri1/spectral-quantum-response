@@ -201,3 +201,35 @@ scale-dominant profile.
   (backfilled), lam10. So N2000/lam0.1 reads 3-seed (0.9946/0.9941) in the
   trajectory table and 4-seed (0.9943/0.9940) in the config table -- both correct,
   tag which is which.]
+
+================================================================
+11. TIMING / AMORTIZATION, f64, nx=128 nt=1000, seed0, CPU (median of 50)
+================================================================
+Per single-sample query (one (psi0, V)):
+  solver forward (psi_T)      2.25 ms
+  FNO forward    (psi_T)      0.26 ms      -> forward surrogate  8.8x
+  J_true (128 JVPs / scan)  121.5 ms
+  J_fno  (128 JVPs / net)    15.7 ms       -> response surrogate 7.7x (saving 105.7 ms/query)
+Both Jacobians cost ~55-60x their own forward (jacfwd over 128-dim V); the
+response-operator speedup TRACKS the forward speedup -- not a separate effect.
+
+Break-even  n* = T_train / saving   (saving = 0.106 s/query):
+  DEPLOYABLE model (lambda=0.0 DINO, response-trustworthy): T_train ~780-960 s (13-16 min)
+    -> n* ~ 7.4k-9.1k queries   (vs 200 available -> ~37-45x the testbed)
+  [forward-only lambda=0: T_train ~180-300 s (3-5 min) -> n* ~1.7k-2.8k, BUT that model
+   is response-wrong (sec 2); its cheaper training is NOT citable for a response claim.]
+  Robust: across every plausible training time n* is thousands >> 200.
+
+HONEST VERDICT: no speed win at this scale. One training run (minutes) already
+costs more than exact J_true for the ENTIRE testbed (200 x 121.5 ms = 24.3 s),
+and n* is thousands of queries vs 200 available -> the 7.7x/query never amortizes
+here. Testbed = CONTROLLED INSTRUMENT, not a production speed claim. The per-query
+win is real and transfers to regimes where one J_true is seconds-minutes (3D, fine
+grids, stiff dynamics) AND queries >> n* (optimization, UQ, inverse design) --
+CONTINGENT on DINO having fixed response accuracy first (a response-wrong surrogate
+is worthless regardless of speed).
+CPU timing (no GPU); RATIOS are portable, absolute ms are machine-specific.
+Sharpening: DINO training itself CONSUMES J_true-JVP evaluations (the ||J_fno·v -
+J_true·v|| targets), so the exact operator is a training-time PREREQUISITE, not
+something the surrogate obviates. Forward-only needs no J_true but is response-wrong
+-> you cannot escape the exact operator AND get response fidelity for free.

@@ -58,3 +58,84 @@ PREDICTION FALSIFIED: "decline carried mostly by r; cos rises modestly, <0.85 at
   (0.859). Logged as falsification of the substantive claim.
 CONFIRMED (Task-A carry-over): raw>1 <=> r>2cos. Crossover at N~500 where r~2cos
   (r=1.364, 2cos=1.368, raw=1.000). Decomposition reproduces the threshold.
+
+
+--- PRE-REG VERDICTS, TASK B (logged 2026-08-17, Decision #4) ---
+
+P-B1  [REWORDED]
+  predicted: "<paste verbatim>"
+  measured : r[M16 λ=0] across N = 1.420 → 1.364 → 1.272 → 1.149 (still falling
+             at N2000); r>1 on every seed at every N.
+  verdict  : Scale is NOT "pinned"/converged at N2000. Correct: persistently
+             inflated (r>1 all seeds) but monotonically declining, not converged.
+             If the pre-reg asserted pinning/convergence, that clause is FALSE.
+
+P-B2  [FALSIFIED AS STATED]
+  predicted: "<paste verbatim>"   (gist: direction lags scale)
+  measured : gap-to-perfect closes ~64–65% on BOTH axes N250→N2000 in lockstep;
+             r−1 slightly > 1−cos throughout → scale marginally MORE stubborn.
+  verdict  : FALSIFIED. Direction does not lag; axes move in lockstep and if
+             anything scale is the slower axis. Retracted on the record.
+
+P-B3  [REWORDED]
+  predicted: "<paste verbatim>"   (gist: DINO is a direction-fixer)
+  measured : DINO λ=0.1: r≈0.994, cos≈0.994; r<1 (under-energetic), axes balanced.
+  verdict  : DINO is a BOTH-axes fixer, not direction-only; r<1 means it slightly
+             OVER-corrects scale — opposite sign from λ=0's r>1.
+
+P-B4  [FALSIFIED AS STATED]
+  predicted: "<paste verbatim>"   (gist: liability is directional, not scale)
+  measured : M16 vs M12 λ=0 N2000: r-gap 0.124–0.138 (NO overlap), cos-gap
+             0.095–0.10 (NO overlap) → both axes; M12 r≈1.011 nearly scale-clean
+             vs M16 r≈1.149.
+  verdict  : FALSIFIED. Liability lives on BOTH axes and is SCALE-dominant
+             (capacity owns the energy inflation most distinctly). Retracted.
+
+
+
+--- PRE-REG VERDICTS, TASK B (FINAL, 4-seed authoritative; supersedes scaffold) ---
+Meta: for P-B1/2/4 the HARD falsifiers did NOT fire (all landed just inside their
+bands). Substantive claims still failed (P-B2) or half-failed (P-B1/P-B4). We
+distinguish "falsifier fired" from "claim held"; falsifiers were set too loose.
+
+P-B1  [HELD (core) / scale sub-claim REWORDED]      N2000 lam0 M16, 4-seed
+  predicted: "forward training PINS SCALE, r in [0.9,1.1]; rescaling barely helps
+             (0.587->~0.56, <7%); failure is DIRECTIONAL, cos ~0.82-0.84."
+  falsifier: resid<0.45 OR r outside [0.85,1.15].  FIRED? NO (r=1.149; resid=0.512).
+  measured : r=1.149, cos=0.859, resid=0.512, raw=0.573.
+  verdict  : Core DIRECTIONAL claim HOLDS (resid 0.512 -- rescale can't save it; cos
+             0.859 ~ predicted). Scale sub-claim WRONG: r=1.149 exceeds [0.9,1.1],
+             rescale removes ~11% not <7%. Scale is a real SECONDARY contributor.
+
+P-B2  [FALSIFIED (substantive) / hard falsifier mis-specified]   across-N lam0 M16, 3-seed
+  predicted: "decline carried MOSTLY by r descending; cos rises modestly, stays <0.85
+             at N2000; forward buys SCALE faster than DIRECTION."
+  falsifier: cos>0.90 by N2000 OR r~1 at N250.  FIRED? NO (cos=0.859; r[N250]=1.42).
+  measured : cos 0.608->0.859 (64% closed); r-1 0.420->0.149 (65% closed) -- LOCKSTEP.
+  verdict  : FALSIFIED substantively. Axes improve near-lockstep, not r-dominant;
+             direction does NOT lag. cos 0.859 also breaches the soft <0.85 bound. The
+             hard falsifier (cos>0.90) was too lax to catch it -- logged as a
+             falsifier-specification error, not a save.
+
+P-B3  [HELD (r in-band) / "moves cos not r" REWORDED]      DINO lam 0->0.1->10, N2000
+  predicted: "r stays ~1 throughout; cos climbs 0.83->~0.995->~0.998; DINO moves cos,
+             not r."
+  falsifier: r outside [0.9,1.1] under DINO.  FIRED? NO (r=0.994 / 0.997).
+  measured : lam0.1 r=0.994 cos=0.994; lam10 r=0.997 cos=0.998.
+  verdict  : r-in-band HOLDS. "Moves cos not r" REWORDED: DINO repairs BOTH axes
+             (r 1.149->0.994, cos 0.859->0.994); r<1 => slight OVER-correction of scale.
+
+P-B4  [HELD (direction-dominant) / "not scale / both r~1" AMENDED]   M12 vs M16 lam0 N2000, 4-seed
+  predicted: "both r~1, so M16 liability lives in cos (cos_M12~0.96 > cos_M16~0.83);
+             higher capacity degrades DIRECTION, not scale."
+  falsifier: |r_M16 - r_M12| > 0.15.  FIRED? NO (|dr|=0.138).
+  measured : M12 r=1.011 cos=0.965 (resid 0.263 ~ raw 0.257: ~pure misalignment);
+             M16 r=1.149 cos=0.859 (resid 0.512, raw 0.573). |dr|=0.138.
+  attribution(one-at-a-time from M12): DIRECTION only 0.257->0.534 (+0.277); SCALE only
+             0.257->0.319 (+0.062). Direction ~4.5x scale.
+  verdict  : DIRECTION-DOMINANT claim HOLDS. "both r~1 / not scale" WRONG: M16 carries a
+             real secondary scale inflation (r=1.149; clean no-overlap |dr|=0.138, just
+             under the 0.15 falsifier). Liability is on BOTH axes, direction-dominant;
+             M12's scale-cleanness (r~1.01) is the crisp qualitative DISCRIMINATOR.
+             [CORRECTION 2026-08-17: an earlier scaffold called this "FALSIFIED,
+              scale-dominant" -- WRONG; attribution shows direction-dominant.]
