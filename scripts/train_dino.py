@@ -101,7 +101,7 @@ def train_step_dino(model, psi0_b, V_b, uT_b, v_b, Jv_true_b,
     model = eqx.apply_updates(model, updates)
     return model, opt_state, loss, fwd, dino
 
-def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None, n_train=None):
+def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None, n_train=None, tag=""):
     if seed is not None:
         cfg.seed = seed
     if n_modes is not None:
@@ -160,7 +160,10 @@ def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None, n
     # frozen train.py stream. Split off the top, evolved independently.
     dino_key = jax.random.PRNGKey(cfg.seed + 10_000)  # +offset: disjoint from init
 
-    os.makedirs("checkpoints", exist_ok=True)
+    subdir = f"checkpoints/{tag}" if tag else "checkpoints"
+    os.makedirs(subdir, exist_ok=True)
+    wsuffix = f"_warmup{warmup_epochs}" if tag else ""   # only tag non-canonical runs
+
     mlflow.set_experiment(cfg.experiment_name)
     run_name = f"dino_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}_lam{dino_lambda}"
     with mlflow.start_run(run_name=run_name):
@@ -215,12 +218,12 @@ def train_dino(cfg, dino_lambda=0.0, warmup_epochs=0, seed=None, n_modes=None, n
                       f"test {float(rel):.4f} | nv {float(nv):.4f}")
             if epoch % 50 == 0:
                 eqx.tree_serialise_leaves(
-                    f"checkpoints/dino_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}"
-                    f"_lam{dino_lambda}_epoch{epoch:04d}.eqx", model)
+                    f"{subdir}/dino_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}"
+                    f"_lam{dino_lambda}{wsuffix}_epoch{epoch:04d}.eqx", model)
 
         eqx.tree_serialise_leaves(
-            f"checkpoints/dino_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}"
-            f"_lam{dino_lambda}_final.eqx", model)
+            f"{subdir}/dino_N{n_actual}_seed{cfg.seed}_M{cfg.n_modes}"
+            f"_lam{dino_lambda}{wsuffix}_final.eqx", model)
         print(f"  done. test rel-L2: {float(rel):.4f} | nv: {float(nv):.4f}")
     return model
 
@@ -233,7 +236,10 @@ if __name__ == "__main__":
     p.add_argument("--seed",        type=int,   default=None)
     p.add_argument("--n_modes",     type=int,   default=None)
     p.add_argument("--n_train", type=int, default=None)
+    p.add_argument("--tag", type=str, default="",
+               help="Non-canonical run tag: writes to checkpoints/<tag>/ with a "
+                    "_warmup{N} filename suffix. Empty (default) = canonical path.")
     args = p.parse_args()
     train_dino(Config(), dino_lambda=args.dino_lambda,
                warmup_epochs=args.warmup_epochs, seed=args.seed,
-               n_modes=args.n_modes, n_train=args.n_train)
+               n_modes=args.n_modes, tag=args.tag)
