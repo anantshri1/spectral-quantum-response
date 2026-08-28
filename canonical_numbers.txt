@@ -50,7 +50,7 @@ Variance collapse lambda=0 -> lambda=10 : std 0.026-0.029 -> 0.0017  (~16x)
 4. RESPONSE — DINO lambda SWEEP (M16), f64
 ================================================================
 lambda    forward    response   recovered
-0         0.0187     0.573      41.3%      [4-seed, canonical]
+0         0.0187     0.573      42.7%      [4-seed, canonical]
 0.1       0.0168     0.104      89.6%      [4-seed, canonical, backfilled]
 1         0.0144     0.073      92.8%      [PROVISIONAL — fewer seeds]
 10        0.0136     0.0571     94.3%      [4-seed, canonical]
