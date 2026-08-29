@@ -256,3 +256,20 @@ INTERPRETATION: FNO response error is SCALE-INVARIANT in eps -- representational
   is small enough to make J_fno valid. J_true eps*>1 kills "linearization is hard here".
 X-check: lam0 plateau ~0.63 ~ Frobenius floor 0.573 (directional avg, O(1) weighting). OK.
 Artifacts: results/fig_validity_radius.png ; results/eps_sweep_arrays.npz
+
+
+## Warmup ablation (M=16, lambda in {0.1, 1, 10}, 3 seeds each) — NULL, COMPLETE
+Response err, warmup=50 vs warmup=0 (3-seed mean):
+  lambda=0.1: 0.1034 vs 0.1016  (delta 0.0018)
+  lambda=1.0: 0.0725 vs 0.0723  (delta 0.0002)
+  lambda=10 : 0.0567 vs 0.0566  (delta 0.0001)  <- tightest null, and the regime
+              where warmup was a priori MOST likely to matter (high lambda)
+All deltas < seed spread (~0.002-0.004) and < SEM (~0.002). No divergence w/o
+warmup at any lambda. Claim is now GENERAL across the tested sweep.
+
+MANUSCRIPT: "Warmup (50 epochs) was used as a stability precaution and ablated
+across lambda in {0.1,1,10}, 3 seeds each; it has no measurable effect on the
+converged response error (max delta 0.0018, within seed noise). Reported runs
+use warmup=50; results are unchanged without it."
+
+Ablation checkpoints: checkpoints/ablation/ (gitignored, throwaway).
