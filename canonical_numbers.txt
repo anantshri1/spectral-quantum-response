@@ -45,6 +45,29 @@ M12 lambda=10  0.0673 +/- 0.0017  range [0.0657, 0.0694]
 M16 lambda=10  0.0571 +/- 0.0017  range [0.0548, 0.0585]
 Flip : M16 < M12, gap 0.0072 (~4 sigma), EVERY individual seed flips.
 Variance collapse lambda=0 -> lambda=10 : std 0.026-0.029 -> 0.0017  (~16x)
+
+## Clip vs retrain, f64, 3-seed (across-seed spread) — CONFIRMED, precision-robust
+| M  | clip           | retrain        | gap    |
+|----|----------------|----------------|--------|
+| 2  | 1.087 ± 0.016  | 1.012 ± 0.018  | 0.075  |
+| 4  | 1.002 ± 0.012  | 0.551 ± 0.005  | 0.451  |
+| 8  | 0.718 ± 0.006  | 0.264 ± 0.008  | 0.454  |
+| 12 | 0.634 ± 0.007  | 0.262 ± 0.023  | 0.372  |
+| 16 | 0.587 ± 0.007  | 0.587 ± 0.007  | 0.000  |  <- identity check PASS (same model)
+
+- Clip>retrain gap survives f64, same shape as Phase 5 f32, now 3-seed. Peaks
+  mid-range (M=4,8: gap ~0.45), closes at both ends (M=2 both starved ~1.0;
+  M=16 identity, gap exactly 0). Peak >> seed spread => CONFIRMED.
+  "Clipping overstates architectural damage; models ADAPT response repr to
+  smaller budgets — response info not rigidly bound to specific mode indices."
+- Retrain interior optimum CONFIRMED, full resolution: 1.01->0.55->0.264->0.262
+  ->0.587. Min at M in {8,12} (0.264/0.262, indistinguishable within spread),
+  M=16 WORSE by ~0.32. Full curve of "more modes hurt response (unsupervised)."
+- M=12 retrain spread (0.023) wider than neighbors — consistent M=12 seed noise
+  seen throughout. M8-vs-M12 is a genuine tie (overlapping bars).
+- Artifacts: results/response_clip_vs_retrain_f64.csv (6000 rows, tidy),
+  response_clip_vs_retrain_f64.png. Retrain checkpoints: dino_..._M{2,4,8}_lam0.0
+  (f64, 3 seeds). Phase 5 f32 artifacts untouched.
  
 ================================================================
 4. RESPONSE — DINO lambda SWEEP (M16), f64
