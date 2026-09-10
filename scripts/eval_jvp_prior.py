@@ -25,7 +25,7 @@ N    = psi0.shape[0]
 print(f"[load] N={N}  psi0={psi0.dtype}  V={V.dtype}  dt={dt}  nt={nt}  ls={ls}")
 
 # --- validated prior_dV (verbatim; do not modify) -------------------------
-def prior_dV(key):
+def prior_dV(key,ls=cfg.v_length_scale):
     kfull = np.fft.fftfreq(nx, d=1/nx)               # signed: 0,1,..,63,-64,..,-1
     env   = np.exp(-np.abs(kfull) * ls)              # exp(-|k|ls)
     cr = jax.random.normal(key, (nx,))

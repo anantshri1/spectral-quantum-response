@@ -355,3 +355,26 @@ E3  [BB hallucination + authoritative isotropic column — pre-reg (M>=12) HELD]
   Pre-reg: BB monotone for M>=12 HELD; global monotone FALSE (underfitting left branch);
   falsifier NOT triggered. seed0 only (mechanism structural; multi-seed M14/20/24 deferred,
   flag as seed0 in paper).
+
+  §6  [block table, seed0 — retraction replaced, HELD]
+  J_true power: SS 98.21%, in-band |k|<12 = 99.76%, B-row marginal 0.08% (BB block 0.07%).
+  Error |k|>=16 marginal: M12 62.1% / M16 96.7% / M24 98.5%  (BB block 60.1/96.3/98.5%).
+  M12 error MIXED (60% BB, 31% in-band) -> M12 iso ~1/3 real; M16+ ~97% inert BB.
+  Overstatement iso/priorJVP monotone in M: 1.9(M2) 2.9(M12) 6.4(M16) 10.9(M24).
+  HEADLINE: isotropic overstates 2-11x, GROWING with capacity (not flat ~7x).
+
+  E4  [response under distribution shift (roughness ls), seed0 — HELD, with scope caveat]
+  M16/M12, lam0/lam10. iso = per-sample-mean vs Jtrue_kq_ls; prior-JVP delta~ls-prior,
+  with delta~training-prior(0.20) as sensitivity. Gate ls=0.20 = in-dist exact (V-V128=0).
+    config      ls0.05  ls0.20  ls0.30   | metric
+    M16 l0 iso  0.592   0.579   0.577    | isotropic ~FLAT under shift (BB-saturated)
+    M16 l0 pjLS 0.341   0.091   0.060    | physical response 3.75x under shift
+    M16 l0 pj20 0.126   0.091   0.087    | training-prior probe ~flat -> liability is
+                                           conditional on probing the empty sector
+    M12 l0 pjLS 0.191   0.086   0.064    | 2.21x (< M16's 3.75x): capacity x shift real
+    M16 l10 pjLS 0.056  0.037   0.033    | DINO SURVIVES shift, stays < baseline 0.091
+  CLAIMS: (i) isotropic is FLAT under shift while physical degrades 3.75x -- metrics
+  disagree on the SIGN of shift-sensitivity. (ii) capacity liability is CONDITIONAL
+  (needs probing unsampled high-q directions), NOT physical -- do NOT overclaim.
+  (iii) DINO's gain transfers to 4x-rougher potentials (answers reviewer concern 7).
+  seed0 only; flag as seed0 in paper.
