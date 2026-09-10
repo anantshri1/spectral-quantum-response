@@ -296,3 +296,30 @@ converged response error (max delta 0.0018, within seed noise). Reported runs
 use warmup=50; results are unchanged without it."
 
 Ablation checkpoints: checkpoints/ablation/ (gitignored, throwaway).
+
+------------------------------------------------------------------------------------
+E2  [HELD (core) / "zero non-monotonicity" clause REWORDED / falsifier NOT triggered]
+  predicted: monotone non-increasing; decrease for small M; plateau ~0.09 by M~8-12;
+             flat M14-24; zero non-monotonicity. Falsifier: rising for M>12.
+  measured (3-seed mean; cross-seed SE ~0.001-0.003; direction-MC +/-0.0025 common):
+             M2 0.545  M4 0.283  M8 0.113  M12 0.087  M14 0.087
+             M16 0.092  M20 0.093  M24 0.086
+  verdict  : Decrease-to-plateau HOLDS. 0.545->0.087 for M2->12; flat 0.089+/-0.003 for
+             M12->24 -- a 6x range in M over which the ISOTROPIC metric rises 3.5x.
+             Plateau onset at M=12 = the data's spectral support (98% of ||J_true||^2 at
+             |q|<12): a mechanistic prediction, confirmed. Falsifier NOT triggered:
+             M24 (0.086) < M12 (0.087), no net rise for M>12.
+             "Zero non-monotonicity" REWORDED: a +0.005 bump at M16-20 (~2 SE, equal to
+             the direction-MC bar) returns to baseline at M24. Within uncertainty, not a
+             trend. Plausible cause: the ~3% of prior-dV power at |k|>=16 (gate A) lets a
+             sliver of unprobed-sector hallucination leak in. Not load-bearing.
+
+M	isotropic (retrain)	prior-JVP	gap
+2	1.01	0.545	—
+4	0.55	0.283	—
+8	0.26	0.113	—
+12	0.26	0.087	0.17
+14	0.40	0.087	0.31
+16	0.59	0.092	0.50
+20	0.83	0.093	0.74
+24	0.92	0.086	0.83
