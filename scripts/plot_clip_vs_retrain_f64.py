@@ -55,8 +55,8 @@ def main():
     ax.grid(alpha=0.3)
     ax.legend()
     fig.tight_layout()
-    fig.savefig("results/response_clip_vs_retrain_f64.png", dpi=150)
-    print("saved results/response_clip_vs_retrain_f64.png")
+    fig.savefig("results/response_clip_vs_retrain_f64_modes.png", dpi=150)
+    print("saved results/response_clip_vs_retrain_f64_modes.png")
 
 if __name__ == "__main__":
     main()

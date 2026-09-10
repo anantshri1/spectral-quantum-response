@@ -14,7 +14,7 @@ from src.responses import jacobian_true, jacobian_fno, response_error
 from tests.measure_floor import load_fno_f64_ckpt   # f64-origin loader + n_modes override
 
 SEEDS = [0, 1, 2]
-MS    = [2, 4, 8, 12, 16]
+MS    = [2, 4, 8, 12, 14, 16, 20, 24]
 
 def retrain_ckpt(seed, M):
     return f"checkpoints/dino_N2000_seed{seed}_M{M}_lam0.0_final.eqx"
