@@ -323,3 +323,35 @@ M	isotropic (retrain)	prior-JVP	gap
 16	0.59	0.092	0.50
 20	0.83	0.093	0.74
 24	0.92	0.086	0.83
+
+Along perturbations drawn from the potential prior, response error decreases with spectral capacity until the data's spectral support is resolved (M≈12, where 98% of ‖J_true‖² lies), then plateaus at 0.089±0.003 through M=24. Over the same range the isotropic Frobenius error rises 3.5× — an increase that lives entirely in a high-wavenumber sector carrying 0.07% of the true operator's power. The apparent capacity liability is spectrally displaced, not physical.
+
+E1  [DINO under prior-JVP — HELD, DINO arc survives as exhibit B; E5 parked]
+  M16, 4-seed. prior-JVP cross-seed mean +/- SE (probe directions FIXED):
+    lam=0    0.0916 +/- 0.0004     lam=0.1  0.0611 +/- 0.0013     lam=10   0.0374 +/- 0.0008
+  Real data-space improvement 0.092->0.037 (~2.5x), decisive (~7sigma paired). ~90% of the
+  isotropic gain (0.573->0.057) was BB cleanup (physically inert); ~10% real.
+  LABEL DISCIPLINE: +/-0.0004 = cross-seed reproducibility with the 320 probe directions held
+  FIXED (CRN); it is NOT direction-sampling uncertainty. Carry within-seed pop-std +/-0.044 and
+  the common direction-MC offset ~+/-0.0025 separately. Never quote +/-0.0004 unlabelled.
+  Gate A correction: prior_dV BB power frac is 0.049+/-0.021 (analytic 0.045), NOT 0.029;
+  0.029 retired as imprecise. Code verified by the 0.091 gate, not Gate A.
+
+E3  [BB hallucination + authoritative isotropic column — pre-reg (M>=12) HELD]
+  seed0. iso = per-sample-mean response_error; |Jfno|_BB RMS over |k|,|q|>=16 (97x97 block).
+    M    iso      priorJVP  |Jfno|_BB RMS
+    2    1.0320   0.5540    4.25e-3
+    4    0.5569   0.2835    2.15e-3
+    8    0.2715   0.1160    1.12e-3
+    12   0.2455   0.0861    1.03e-3   <- U-shape minimum = data spectral support
+    14   0.3871   0.0862    1.95e-3
+    16   0.5787   0.0909    3.09e-3
+    20   0.8611   0.0945    4.65e-3
+    24   0.9585   0.0878    5.19e-3
+  |J_true| BB RMS floor ~1.4e-4.  Retrain isotropic column VERIFIED = response-Frobenius
+  (matches tabulated 1.01..0.92 to ~2%); no forward-error mixup; gap column valid.
+  Right branch M12->24: iso x3.9, BB RMS x5, priorJVP flat. iso/BB_RMS -> ~185 for M>=16:
+  the isotropic rise is dominated by BB hallucination. M24 BB amp = 37x physical floor.
+  Pre-reg: BB monotone for M>=12 HELD; global monotone FALSE (underfitting left branch);
+  falsifier NOT triggered. seed0 only (mechanism structural; multi-seed M14/20/24 deferred,
+  flag as seed0 in paper).
