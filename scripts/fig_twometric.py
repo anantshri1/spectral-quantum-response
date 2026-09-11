@@ -42,6 +42,8 @@ ax.errorbar(M, phys, yerr=phys_se, marker="s", ms=5, lw=1.6, capsize=2.5, color=
             label=r"data-space $err_{\mathrm{phys}}$ (prior-JVP)")
 ax.axvline(SUPPORT, color="0.5", ls=":", lw=1.0)
 ax.set_xlabel(r"retained spectral modes $M$"); ax.set_ylabel("relative response error")
+ax.set_title("Isotropic and physical response error diverge above the data's spectral support",
+             fontsize=9.5)
 ax.set_xticks(M); ax.set_ylim(0, 1.05)
 ax.legend(frameon=False, fontsize=8.5, loc="center right")
 fig.tight_layout(); fig.savefig("results/fig_twometric.png", dpi=200, bbox_inches="tight")
