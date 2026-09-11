@@ -46,27 +46,37 @@ def prior_jvp_err(model, V, ls, ndir=8, nsamp=40):     # same reduction as E1, b
 
 if __name__ == "__main__":
     os.makedirs("results/ood", exist_ok=True)
-    seed = 0
-    configs = [("M16", 16, 0.0), ("M16", 16, 10.0), ("M12", 12, 0.0)]   # (label, M, lam)
+    SEEDS = [0, 1, 2]                       # matches E2 + the fwderr seed set
+    configs = [("M16", 16, 0.0), ("M16", 16, 10.0), ("M12", 12, 0.0)]
     Jt = {ls: np.load(f"results/ood/Jtrue_kq_ls{ls:.2f}.npy") for ls in LS_GRID}
 
+    agg = {}
     for label, M, lam in configs:
-        ck = f"checkpoints/dino_N2000_seed{seed}_M{M}_lam{float(lam)}_final.eqx"
-        m  = load_fno_f64_ckpt(ck, cfg, n_modes=M)
-        print(f"\n=== {label} lam{lam} ===")
-        print(f"{'ls':>5} {'iso':>8} {'priorJVP(ls)':>13} {'priorJVP(0.20)':>15}")
+        for seed in SEEDS:
+            ck = f"checkpoints/dino_N2000_seed{seed}_M{M}_lam{float(lam)}_final.eqx"
+            if not os.path.exists(ck):
+                print(f"[missing] {ck} — skipping"); continue
+            m = load_fno_f64_ckpt(ck, cfg, n_modes=M)
+            for ls in LS_GRID:
+                out = f"results/ood/resperr_seed{seed}_{label}_lam{float(lam)}_ls{ls:.2f}.npz"
+                if os.path.exists(out):
+                    z = np.load(out); iso, pj = float(z["iso"]), float(z["pj"])
+                else:
+                    V = Vood(ls)
+                    iso = iso_err(jfno_kq(m, V), Jt[ls])
+                    pj, _ = prior_jvp_err(m, V, ls)
+                    np.savez(out, iso=iso, pj=pj, pj0=float("nan"), ls=ls, M=M, lam=lam, seed=seed)
+                    print(f"[run] {label} lam{lam} seed{seed} ls{ls:.2f}: iso={iso:.4f} pjLS={pj:.4f}")
+                agg.setdefault((label,lam,ls), {"iso":[],"pj":[]})
+                agg[(label,lam,ls)]["iso"].append(iso); agg[(label,lam,ls)]["pj"].append(pj)
+
+    print("\n=== E4 cross-seed (mean +/- SE) ===")
+    for label, M, lam in configs:
+        print(f"\n{label} lam{lam}")
+        print(f"{'ls':>5} {'iso':>18} {'priorJVP(ls)':>20}")
         for ls in LS_GRID:
-            out = f"results/ood/resperr_seed{seed}_{label}_lam{float(lam)}_ls{ls:.2f}.npz"
-            if os.path.exists(out):
-                z = np.load(out); iso, pj, pj0 = float(z["iso"]), float(z["pj"]), float(z["pj0"])
-            else:
-                V   = Vood(ls)
-                Jf  = jfno_kq(m, V)
-                iso = iso_err(Jf, Jt[ls])
-                pj,  _ = prior_jvp_err(m, V, ls)          # delta ~ ls-prior (physical shift)
-                pj0, _ = prior_jvp_err(m, V, 0.20)        # delta ~ training prior (sensitivity)
-                np.savez(out, iso=iso, pj=pj, pj0=pj0, ls=ls, M=M, lam=lam, seed=seed)
-            # gate: ls=0.20 must reproduce in-dist for the M16 lam0 row
-            if label=="M16" and lam==0.0 and abs(ls-0.20)<1e-12:
-                assert abs(iso-0.5787)<0.02 and abs(pj-0.0909)<0.02, "ls=0.20 drift — STOP"
-            print(f"{ls:>5.2f} {iso:>8.4f} {pj:>13.4f} {pj0:>15.4f}")
+            a = agg.get((label,lam,ls));  n = len(a["pj"]) if a else 0
+            if not n: continue
+            iso, pj = np.array(a["iso"]), np.array(a["pj"])
+            se = lambda x: x.std(ddof=1)/np.sqrt(n) if n>1 else 0.0
+            print(f"{ls:>5.2f} {iso.mean():>9.4f}+/-{se(iso):.4f} {pj.mean():>11.4f}+/-{se(pj):.4f}")

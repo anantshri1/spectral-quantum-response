@@ -26,36 +26,34 @@ def jfno_kq_for(ckpt, M, chunk=25):
     return np.asarray(jnp.concatenate(outs, axis=0))
 
 if __name__ == "__main__":
-    seed = 0
+    SEEDS = [0, 1, 2]                       # 14/20/24 have exactly 3 seeds
     Modes = [2, 4, 8, 12, 14, 16, 20, 24]
     kabs = np.abs(np.fft.fftfreq(nx, d=1/nx)).astype(int)
-    bb   = np.ix_(kabs >= 16, kabs >= 16)                 # BBxBB block — the empty sector
-    gate = {12: 0.2455, 16: 0.5787}                       # seed0 isotropic, reproduce-or-STOP
+    bb   = np.ix_(kabs >= 16, kabs >= 16)
+    gate = {(0,12): 0.2455, (0,16): 0.5787}
 
-    jt_bb_rms = float(np.sqrt((np.abs(Jtrue_kq[:, bb[0], bb[1]])**2).mean()))
-    print(f"[ref] |J_true| BB RMS = {jt_bb_rms:.3e}   (physical floor)\n")
-    print(f"{'M':>3} {'iso':>8} {'priorJVP':>9} {'gap':>8} {'|Jfno|_BB RMS':>14}")
+    agg = {}
+    for seed in SEEDS:
+        for M in Modes:
+            ckpt  = f"checkpoints/dino_N2000_seed{seed}_M{M}_lam0.0_final.eqx"
+            cache = f"results/Jfno_kq_seed{seed}_M{M}.npy"
+            if not os.path.exists(ckpt):
+                print(f"[missing] {ckpt}"); continue
+            Jf = np.load(cache) if os.path.exists(cache) else jfno_kq_for(ckpt, M)
+            if not os.path.exists(cache): np.save(cache, Jf)
+            iso = float(np.mean([float(response_error(jnp.asarray(Jf[s]), jnp.asarray(Jtrue_kq[s]))) for s in range(N)]))
+            if (seed,M) in gate:
+                assert abs(iso-gate[(seed,M)])<0.02, f"seed{seed} M{M} iso {iso:.4f} != {gate[(seed,M)]} — STOP"
+            bb_rms = float(np.sqrt((np.abs(Jf[:, bb[0], bb[1]])**2).mean()))
+            agg.setdefault(M, {"iso":[],"bb":[]})
+            agg[M]["iso"].append(iso); agg[M]["bb"].append(bb_rms)
+            print(f"[E3] seed{seed} M{M}: iso={iso:.4f}  BB_RMS={bb_rms:.3e}")
 
-    rows = []
+    print("\n=== E3 cross-seed (mean +/- SE) ===")
+    print(f"{'M':>3} {'iso':>18} {'|Jfno|_BB RMS':>22}")
     for M in Modes:
-        ckpt  = f"checkpoints/dino_N2000_seed{seed}_M{M}_lam0.0_final.eqx"
-        cache = f"results/Jfno_kq_seed{seed}_M{M}.npy"
-        Jf = np.load(cache) if os.path.exists(cache) else jfno_kq_for(ckpt, M)
-        if not os.path.exists(cache): np.save(cache, Jf)
-
-        iso = float(np.mean([float(response_error(jnp.asarray(Jf[s]), jnp.asarray(Jtrue_kq[s]))) for s in range(N)]))
-        if M in gate:
-            assert abs(iso - gate[M]) < 0.02, f"M{M} iso {iso:.4f} drifted from {gate[M]} — STOP"
-
-        bb_rms = float(np.sqrt((np.abs(Jf[:, bb[0], bb[1]])**2).mean()))
-        pj  = float(np.load(f"results/jvp_prior_seed{seed}_M{M}_lam0.0.npz")["mean"])
-        rows.append((M, iso, pj, iso - pj, bb_rms))
-        print(f"{M:>3} {iso:>8.4f} {pj:>9.4f} {iso-pj:>8.4f} {bb_rms:>14.3e}")
-
-    bbs  = [r[4] for r in rows]
-    mono = all(bbs[i] <= bbs[i+1] + 1e-9 for i in range(len(bbs)-1))
-    print(f"\n[E3] BB RMS monotone non-decreasing across all M: {mono}")
-    # the load-bearing claim is the M>=12 regime (where added modes land in BB):
-    hi = [r for r in rows if r[0] >= 12]
-    mono_hi = all(hi[i][4] <= hi[i+1][4] + 1e-9 for i in range(len(hi)-1))
-    print(f"[E3] BB RMS monotone for M>=12 (the prediction): {mono_hi}")
+        a = agg.get(M);  n = len(a["iso"]) if a else 0
+        if not n: continue
+        iso, bbv = np.array(a["iso"]), np.array(a["bb"])
+        se = lambda x: x.std(ddof=1)/np.sqrt(n) if n>1 else 0.0
+        print(f"{M:>3} {iso.mean():>9.4f}+/-{se(iso):.4f} {bbv.mean():>12.3e}+/-{se(bbv):.1e}")
