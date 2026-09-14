@@ -1,4 +1,6 @@
 # scripts/block_table.py — §6 replacement: (S,X,B)x(S,X,B) error decomposition.
+import os
+
 import jax; jax.config.update("jax_enable_x64", True)
 import numpy as np
 from configs.default import Config
@@ -28,4 +30,9 @@ def show(name, F):
 
 show("J_true power", block_fracs(Jtrue))
 for M in [12, 16, 24]:
-    show(f"M{M} error  ||Jfno-Jtrue||^2 by block", block_fracs(np.load(f"results/Jfno_kq_seed0_M{M}.npy") - Jtrue))
+    for seed in [0, 1, 2]:
+        ckpt = f"checkpoints/dino_N2000_seed{seed}_M{M}_lam0.0_final.eqx"
+        if not os.path.exists(ckpt):
+            print(f"[missing] {ckpt} — skipping"); continue
+        show(f"M{M} seed{seed} Jfno-Jtrue error", block_fracs(np.load(f"results/Jfno_kq_seed{seed}_M{M}.npy") - Jtrue))
+    #show(f"M{M} error  ||Jfno-Jtrue||^2 by block", block_fracs(np.load(f"results/Jfno_kq_seed{seed}_M{M}.npy") - Jtrue))
